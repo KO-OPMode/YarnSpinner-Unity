@@ -569,7 +569,9 @@ namespace Yarn.Unity
                 return;
             }
 
-            Dialogue.Continue();
+            // KO_OP custom start
+            ContinueAndCatchExceptions();
+            // KO_OP custom end
         }
 
         private void OnLineReceived(Line line)
@@ -590,7 +592,9 @@ namespace Yarn.Unity
 
             if (dialogueCancellationSource?.IsCancellationRequested == false)
             {
-                Dialogue.Continue();
+                // KO_OP custom start
+                ContinueAndCatchExceptions();
+                // KO_OP custom end
             }
         }
 
@@ -807,7 +811,9 @@ namespace Yarn.Unity
             else
             {
                 // Proceed to the next piece of dialogue content.
-                Dialogue.Continue();
+                // KO_OP custom start
+                ContinueAndCatchExceptions();
+                // KO_OP custom end
             }
         }
 
@@ -893,7 +899,10 @@ namespace Yarn.Unity
                     tasks.Add(view.OnDialogueStartedAsync());
                 }
                 await YarnTask.WhenAll(tasks);
-                Dialogue.Continue();
+
+                // KO_OP custom start
+                ContinueAndCatchExceptions();
+                // KO_OP custom end
             }
         }
 
@@ -958,6 +967,31 @@ namespace Yarn.Unity
             }
 
             currentLineHurryUpSource.Cancel();
+        }
+
+        // KO_OP custom start
+        /// <summary>
+        /// Invoke Dialogue.Continue() within try-catch for resiliency against badly configured Yarn files
+        /// </summary>
+        private void ContinueAndCatchExceptions() 
+        {
+            try
+            {
+                // Proceed to the next piece of dialogue content.
+                Dialogue.Continue();
+            }
+            catch (DialogueException e)
+            {
+                Debug.LogException(e);
+                
+                // Can't call CancelDialogue() since we set the VM state to Stopped() before throwing the exception,
+                // which causes CancelDialogue() to early-out
+                // CancelDialogue();
+                
+                // Notify listeners that we're done
+                Dialogue?.Stop();
+            }
+            // KO_OP custom end
         }
     }
 }
