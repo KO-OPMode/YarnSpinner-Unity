@@ -34,6 +34,9 @@ namespace Yarn.Unity.Samples
         }
     }
 
+    // KO_OP custom start
+    #if UNITY_EDITOR
+
     [CustomEditor(typeof(SampleRenderDetector))]
     public class SampleRenderDetectorEditor : UnityEditor.Editor
     {
@@ -49,4 +52,7 @@ namespace Yarn.Unity.Samples
             }
         }
     }
+
+    #endif
+    // KO_OP custom end
 }
