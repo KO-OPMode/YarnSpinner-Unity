@@ -725,28 +725,35 @@ namespace Yarn.Unity.Editor
     /// </summary>
     [CanEditMultipleObjects]
     [CustomEditor(typeof(VoiceOverPresenter))]
-    public class VoiceOverViewEditor : YarnEditor { }
+    public class VoiceOverPresenterEditor : YarnEditor { }
 
     /// <summary>
-    /// The editor for <see cref="AsyncLineViewEditor"/> objects.
+    /// The editor for <see cref="LinePresenter"/> objects.
     /// </summary>
     [CanEditMultipleObjects]
     [CustomEditor(typeof(LinePresenter))]
-    public class AsyncLineViewEditor : YarnEditor { }
+    public class LinePresenterEditor : YarnEditor { }
 
     /// <summary>
-    /// The editor for <see cref="AsyncOptionsViewEditor"/> objects.
+    /// The editor for <see cref="OptionsPresenter"/> objects.
     /// </summary>
     [CanEditMultipleObjects]
     [CustomEditor(typeof(OptionsPresenter))]
-    public class AsyncOptionsViewEditor : YarnEditor { }
+    public class OptionsPresenterEditor : YarnEditor { }
 
     /// <summary>
-    /// The editor for <see cref="LineAdvancerEditor"/> objects.
+    /// The editor for <see cref="LineAdvancer"/> objects.
     /// </summary>
     [CanEditMultipleObjects]
     [CustomEditor(typeof(LineAdvancer))]
     public class LineAdvancerEditor : YarnEditor { }
+
+    /// <summary>
+    /// The editor for <see cref="BuiltinLocalisedLineProvider"/> objects.
+    /// </summary>
+    [CanEditMultipleObjects]
+    [CustomEditor(typeof(BuiltinLocalisedLineProvider))]
+    public class BuiltinLocalisedLineProviderEditor : YarnEditor { }
 
     /// <summary>
     /// The editor for <see cref="DialogueRunner"/> objects.
@@ -755,6 +762,125 @@ namespace Yarn.Unity.Editor
     [CustomEditor(typeof(DialogueRunner))]
     public class DialogueRunnerEditor : YarnEditor
     {
+        private const string docsLabel = "Docs";
+        private const string samplesLabel = "Samples";
+        private const string discordLabel = "Discord";
+        private const string tellUsLabel = "Tell us about your game!";
+        private const string docsURL = "https://docs.yarnspinner.dev/";
+        private const string discordURL = "https://discord.com/invite/yarnspinner";
+        private const string tellUsURL = "https://yarnspinner.dev/tell-us";
+
+        private const int logoMaxWidth = 240; // px, because links line is about 350px wide
+
+        private static GUIStyle? _urlStyle = null;
+        private static GUIStyle UrlStyle
+        {
+            get
+            {
+                if (_urlStyle == null)
+                {
+                    _urlStyle = new GUIStyle(GUI.skin.label);
+                    _urlStyle.richText = true;
+                }
+                return _urlStyle;
+            }
+        }
+        private static Texture2D? _yarnSpinnerLogo = null;
+        private static Texture2D YarnSpinnerLogo
+        {
+            get
+            {
+                if (_yarnSpinnerLogo == null)
+                {
+                    string? logoPath = AssetDatabase.GUIDToAssetPath("16f8cd23bf0d0480bb8ecc39be853cda");
+                    _yarnSpinnerLogo = AssetDatabase.LoadAssetAtPath<Texture2D>(logoPath);
+                }
+                return _yarnSpinnerLogo;
+            }
+        }
+
+        internal static void DrawYarnSpinnerHeader()
+        {
+            bool MakeLinkButton(string labelText)
+            {
+#if UNITY_6000_0_OR_NEWER
+                string styledText = "<b><color=#4C8962FF><u>" + labelText + "</u></color></b>";
+#else
+                // Underlines aren't available in earlier versions of Unity
+                string styledText = "<b><color=#4C8962FF>" + labelText + "</color></b>";
+#endif
+                return GUILayout.Button(styledText, UrlStyle, GUILayout.ExpandWidth(false));
+            }
+            void InstallSamples()
+            {
+                try
+                {
+                    // if we have the samples already installed we can just use them
+                    // we don't really care HOW they got them at this point
+                    // for now just open the package manager, later Mars wanted to add in a wizard here
+                    if (YarnPackageImporter.IsSamplesPackageInstalled)
+                    {
+                        YarnPackageImporter.OpenSamplesUI();
+                    }
+                    else
+                    {
+                        // we don't have the samples installed
+                        YarnPackageImporter.InstallSamples();
+                    }
+                }
+                catch (YarnPackageImporterException ex)
+                {
+                    // TODO show error dialogue
+                    // for now just log it
+                    Debug.LogException(ex);
+                }
+            }
+
+            EditorGUILayout.Space();
+            EditorGUILayout.BeginHorizontal(GUILayout.ExpandWidth(false));
+            GUILayout.FlexibleSpace(); // centre by padding from left
+
+            // https://discussions.unity.com/t/how-to-display-an-image-logo-in-a-custom-editor/528405/9
+            float imageWidth = Math.Min(EditorGUIUtility.currentViewWidth - 40, logoMaxWidth);
+            float imageHeight = imageWidth * YarnSpinnerLogo.height / YarnSpinnerLogo.width;
+            Rect rect = GUILayoutUtility.GetRect(imageWidth, imageHeight);
+            GUI.DrawTexture(rect, YarnSpinnerLogo, ScaleMode.ScaleToFit);
+
+            GUILayout.FlexibleSpace(); // centre by padding from right
+            EditorGUILayout.EndHorizontal();
+
+            Rect linksLine = EditorGUILayout.BeginHorizontal(GUILayout.ExpandWidth(false));
+            GUILayout.FlexibleSpace(); // centre by padding from left
+
+            if (MakeLinkButton(docsLabel)) { Application.OpenURL(docsURL); }
+
+            // we default to assuming most of the time we don't need to change the visuals of the button
+            // but if there is an installation request and it isn't yet complete
+            // we set the button to be disabled
+            var isActive = true;
+            if (YarnPackageImporter.Status == YarnPackageImporter.SamplesPackageStatus.Installing)
+            {
+                isActive = false;
+            }
+
+            GUI.enabled = isActive;
+            if (MakeLinkButton(samplesLabel)) { InstallSamples(); }
+            GUI.enabled = true;
+            if (MakeLinkButton(discordLabel)) { Application.OpenURL(discordURL); }
+            if (MakeLinkButton(tellUsLabel)) { Application.OpenURL(tellUsURL); }
+            GUILayout.FlexibleSpace(); // centre by padding from right
+
+            EditorGUILayout.EndHorizontal();
+            EditorGUIUtility.AddCursorRect(linksLine, MouseCursor.Link);
+            EditorGUILayout.Space();
+        }
+
+        public override void OnInspectorGUI()
+        {
+            DrawYarnSpinnerHeader();
+            base.OnInspectorGUI();
+        }
+
         /// <summary>
         /// Draws the variable storage property in the inspector. If it's null,
         /// shows an info box.

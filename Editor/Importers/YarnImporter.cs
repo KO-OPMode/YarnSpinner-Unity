@@ -19,7 +19,7 @@ namespace Yarn.Unity.Editor
     /// <summary>
     /// A <see cref="ScriptedImporter"/> for Yarn assets.
     /// </summary>
-    [ScriptedImporter(6, new[] { "yarn", "yarnc" }, -1), HelpURL("https://yarnspinner.dev/docs/unity/components/yarn-programs/")]
+    [ScriptedImporter(6, new[] { "yarn", "yarnc" }, -1), HelpURL("https://docs.yarnspinner.dev/using-yarnspinner-with-unity/importing-yarn-files/yarn-projects")]
     [InitializeOnLoad]
     public class YarnImporter : ScriptedImporter
     {
@@ -124,7 +124,6 @@ namespace Yarn.Unity.Editor
                 // Re-import each project.
                 foreach (var importer in missingProjectImporters)
                 {
-                    Debug.Log($"Project {importer.assetPath} needs to be reimported");
                     EditorUtility.SetDirty(importer);
                     importer.SaveAndReimport();
                 }

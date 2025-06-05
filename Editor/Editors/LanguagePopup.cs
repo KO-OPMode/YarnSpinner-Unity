@@ -5,20 +5,15 @@ Yarn Spinner is licensed to you under the terms found in the file LICENSE.md.
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using UnityEngine;
 using UnityEditor.UIElements;
+using UnityEngine;
 using UnityEngine.UIElements;
 #nullable enable
 
 namespace Yarn.Unity.Editor
 {
-
     public class LanguageField : BaseField<string>
     {
-        new class UxmlFactory : UxmlFactory<LanguageField, UxmlTraits> { }
-
-        new class UxmlTraits : BaseField<string>.UxmlTraits { }
-
         PopupField<string?> m_Popup;
         TextField m_TextField;
 

@@ -7,62 +7,12 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
+#nullable enable
+
 namespace Yarn.Unity
 {
     public partial class DialogueRunner
     {
-        /// <summary>
-        /// Loads all variables from the <see cref="PlayerPrefs"/> object into
-        /// the Dialogue Runner's variable storage.
-        /// </summary>
-        /// <remarks>
-        /// <para>
-        /// This method loads a string containing JSON from the <see
-        /// cref="PlayerPrefs"/> object under the key <see cref="SaveKey"/>,
-        /// deserializes that JSON, and then uses the resulting object to set
-        /// all variables in <see cref="VariableStorage"/>.
-        /// </para>
-        /// <para>
-        /// The loaded information can be stored via the <see
-        /// cref="SaveStateToPlayerPrefs(string)"/> method.
-        /// </para>
-        /// </remarks>
-        /// <param name="SaveKey">The key to use when storing the
-        /// variables.</param>
-        /// <returns><see langword="true"/> if the variables were successfully
-        /// loaded from the player preferences; <see langword="false"/>
-        /// otherwise.</returns>
-        /// <seealso
-        /// cref="VariableStorageBehaviour.SetAllVariables(Dictionary{string,
-        /// float}, Dictionary{string, string}, Dictionary{string, bool},
-        /// bool)"/>
-        [Obsolete("LoadStateFromPlayerPrefs is deprecated, please use LoadStateFromPersistentStorage instead.", true)]
-        public bool LoadStateFromPlayerPrefs(string SaveKey = "YarnBasicSave")
-        {
-            if (PlayerPrefs.HasKey(SaveKey))
-            {
-                var saveData = PlayerPrefs.GetString(SaveKey);
-
-                try
-                {
-                    var dictionaries = DeserializeAllVariablesFromJSON(saveData);
-                    this.variableStorage.SetAllVariables(dictionaries.Item1, dictionaries.Item2, dictionaries.Item3);
-
-                    return true;
-                }
-                catch (ArgumentException e)
-                {
-                    Debug.LogWarning($"Unable to load saved data: {e.Message}");
-                    return false;
-                }
-            }
-            else
-            {
-                Debug.LogWarning("Attempted to load the runner previous state but found none saved");
-                return false;
-            }
-        }
-
         /// <summary>
         /// Loads all variables from the requested file in persistent storage
         /// into the Dialogue Runner's variable storage.
@@ -85,12 +35,19 @@ namespace Yarn.Unity
         /// otherwise.</returns>
         public bool LoadStateFromPersistentStorage(string saveFileName)
         {
+            if (this.variableStorage == null)
+            {
+                Debug.LogWarning($"Can't load state from persistent storage: {nameof(variableStorage)} is not set");
+                return false;
+            }
+
             var path = System.IO.Path.Combine(Application.persistentDataPath, saveFileName);
 
             try
             {
                 var saveData = System.IO.File.ReadAllText(path);
                 var dictionaries = DeserializeAllVariablesFromJSON(saveData);
+
                 this.variableStorage.SetAllVariables(dictionaries.Item1, dictionaries.Item2, dictionaries.Item3);
             }
             catch (Exception e)
@@ -100,33 +57,6 @@ namespace Yarn.Unity
             }
 
             return true;
-        }
-
-        /// <summary>
-        /// Saves all variables in the Dialogue Runner's variable storage into
-        /// the <see cref="PlayerPrefs"/> object.
-        /// </summary>
-        /// <remarks>
-        /// <para>
-        /// This method serializes all variables in <see
-        /// cref="VariableStorage"/> into a string containing JSON, and then
-        /// stores that string in the <see cref="PlayerPrefs"/> object under the
-        /// key <paramref name="SaveKey"/>.
-        /// </para>
-        /// <para>
-        /// The stored information can be restored via the <see
-        /// cref="LoadStateFromPlayerPrefs(string)"/> method.
-        /// </para>
-        /// </remarks>
-        /// <param name="SaveKey">The key to use when storing the
-        /// variables.</param>
-        /// <seealso cref="VariableStorageBehaviour.GetAllVariables"/>
-        [Obsolete("SaveStateToPlayerPrefs is deprecated, please use SaveStateToPersistentStorage instead.", true)]
-        public void SaveStateToPlayerPrefs(string SaveKey = "YarnBasicSave")
-        {
-            var data = SerializeAllVariablesToJSON();
-            PlayerPrefs.SetString(SaveKey, data);
-            PlayerPrefs.Save();
         }
 
         /// <summary>
@@ -175,15 +105,15 @@ namespace Yarn.Unity
         {
             SaveData data = JsonUtility.FromJson<SaveData>(jsonData);
 
-            if (data.floatKeys == null && data.floatValues == null)
+            if (data.floatKeys == null || data.floatValues == null)
             {
                 throw new ArgumentException("Provided JSON string was not able to extract numeric variables");
             }
-            if (data.stringKeys == null && data.stringValues == null)
+            if (data.stringKeys == null || data.stringValues == null)
             {
                 throw new ArgumentException("Provided JSON string was not able to extract string variables");
             }
-            if (data.boolKeys == null && data.boolValues == null)
+            if (data.boolKeys == null || data.boolValues == null)
             {
                 throw new ArgumentException("Provided JSON string was not able to extract boolean variables");
             }
@@ -221,6 +151,11 @@ namespace Yarn.Unity
         }
         private string SerializeAllVariablesToJSON()
         {
+            if (this.variableStorage == null)
+            {
+                throw new InvalidOperationException("Can't save variables to JSON: {nameof(variableStorage)} is not set");
+            }
+
             (var floats, var strings, var bools) = this.variableStorage.GetAllVariables();
 
             SaveData data = new SaveData();
@@ -237,12 +172,12 @@ namespace Yarn.Unity
         [System.Serializable]
         private struct SaveData
         {
-            public string[] floatKeys;
-            public float[] floatValues;
-            public string[] stringKeys;
-            public string[] stringValues;
-            public string[] boolKeys;
-            public bool[] boolValues;
+            public string[]? floatKeys;
+            public float[]? floatValues;
+            public string[]? stringKeys;
+            public string[]? stringValues;
+            public string[]? boolKeys;
+            public bool[]? boolValues;
         }
 
         /// <summary>

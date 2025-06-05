@@ -5,6 +5,8 @@ Yarn Spinner is licensed to you under the terms found in the file LICENSE.md.
 using System;
 using Yarn.Utility;
 
+#nullable enable
+
 namespace Yarn.Unity
 {
     /// <summary>
@@ -39,9 +41,9 @@ namespace Yarn.Unity
         /// <returns>The value of <paramref name="variableName"/>, or the
         /// default value of
         /// <typeparamref name="T"/>.</returns>
-        public static T GetValueOrDefault<T>(this IGeneratedVariableStorage storage, string variableName) where T : IConvertible
+        public static T? GetValueOrDefault<T>(this IGeneratedVariableStorage storage, string variableName) where T : IConvertible
         {
-            if (storage.TryGetValue<T>(variableName, out T result))
+            if (storage.TryGetValue<T>(variableName, out T? result))
             {
                 return result;
             }
@@ -71,9 +73,9 @@ namespace Yarn.Unity
             }
         }
 
-        public static T GetEnumValueOrDefault<T>(this IGeneratedVariableStorage storage, string variableName) where T : System.Enum
+        public static T? GetEnumValueOrDefault<T>(this IGeneratedVariableStorage storage, string variableName) where T : System.Enum
         {
-            if (!storage.TryGetValue(variableName, out object result))
+            if (!storage.TryGetValue(variableName, out object? result))
             {
                 UnityEngine.Debug.LogError($"Failed to get a value of type {typeof(T).Name} for variable {variableName}.");
                 return default;
@@ -81,14 +83,23 @@ namespace Yarn.Unity
 
             int caseValue;
 
-            if (result.GetType() == typeof(string))
+            if (result is string stringResult)
             {
                 // Convert the string value to a hash
-                caseValue = (int)CRC32.GetChecksum((string)result);
+                caseValue = (int)CRC32.GetChecksum(stringResult);
+            }
+            else if (result is float floatResult)
+            {
+                caseValue = (int)floatResult;
+            }
+            else if (result is int intResult)
+            {
+                caseValue = intResult;
             }
             else
             {
-                caseValue = (int)result;
+                UnityEngine.Debug.LogError($"Failed to get a value of type {typeof(T).Name} for variable {variableName}: received an unexpected variable type {result.GetType()} from variable storage");
+                return default;
             }
 
             if (Enum.IsDefined(typeof(T), caseValue))

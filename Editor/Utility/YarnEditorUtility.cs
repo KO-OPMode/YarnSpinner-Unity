@@ -8,6 +8,8 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
+#nullable enable
+
 namespace Yarn.Unity.Editor
 {
     /// <summary>
@@ -24,7 +26,7 @@ namespace Yarn.Unity.Editor
         const string ProjectIconTextureGUID = "f6a533d9225cd40ea9ded31d4f686e3b";
         const string LocalizationIconTextureGUID = "2cbba4ddd142149b0a38697070990deb";
         const string YarnScriptTemplateFileGUID = "4f4ca4a46020a454f80e2ac78eda5aa1";
-        const string DialogueViewTemplateFileGUID = "4a168359cda6140c0bddcd5955a326e4";
+        const string DialoguePresenterTemplateFileGUID = "4a168359cda6140c0bddcd5955a326e4";
 
         /// <summary>
         /// Returns a <see cref="Texture2D"/> that can be used to represent
@@ -85,15 +87,15 @@ namespace Yarn.Unity.Editor
 
         /// <summary>
         /// Returns the path to a text file that can be used as the basis
-        /// for newly created C# Dialogue View scripts.
+        /// for newly created C# Dialogue Presenter scripts.
         /// </summary>
         /// <returns>A path to a file to use in the Unity editor for
-        /// creating new C# Dialogue View.</returns>
+        /// creating new C# Dialogue Presenter.</returns>
         /// <throws cref="FileNotFoundException">Thrown if the template
         /// text file cannot be found.</throws>
-        public static string GetTemplateDialogueViewPath()
+        public static string GetTemplateDialoguePresenterPath()
         {
-            var path = AssetDatabase.GUIDToAssetPath(DialogueViewTemplateFileGUID);
+            var path = AssetDatabase.GUIDToAssetPath(DialoguePresenterTemplateFileGUID);
             if (string.IsNullOrEmpty(path))
             {
                 throw new System.IO.FileNotFoundException($"Template file for Dialogue View scripts couldn't be found. Have the .meta files for Yarn Spinner been modified or deleted? Try re-importing the Yarn Spinner package to fix this error.");
@@ -140,12 +142,12 @@ namespace Yarn.Unity.Editor
         }
 
         /// <summary>
-        /// Creates a new C# script asset containing a template Dialogue View in
+        /// Creates a new C# script asset containing a template Dialogue Presenter in
         /// the current folder, and begins interactively renaming it.
         /// </summary>
-        [MenuItem("Assets/Create/Yarn Spinner/Dialogue View Script", false, 111)]
-        [MenuItem("Assets/Create/Scripting/Yarn Spinner/Dialogue View Script", false, 101)]
-        public static void CreateDialogueViewScript()
+        [MenuItem("Assets/Create/Yarn Spinner/Dialogue Presenter Script", false, 111)]
+        [MenuItem("Assets/Create/Scripting/Yarn Spinner/Dialogue Presenter Script", false, 101)]
+        public static void CreateDialoguePresenterScript()
         {
             // This method call is undocumented, but public. It's defined
             // in ProjectWindowUtil, and used by other parts of the editor
@@ -153,9 +155,9 @@ namespace Yarn.Unity.Editor
             ProjectWindowUtil.StartNameEditingIfProjectWindowExists(
                 0,
                 ScriptableObject.CreateInstance<DoCreateYarnScriptAsset>(),
-                "NewDialogueView.cs",
+                "NewDialoguePresenter.cs",
                 null,
-                GetTemplateDialogueViewPath());
+                GetTemplateDialoguePresenterPath());
         }
 
         /// <summary>
@@ -300,11 +302,11 @@ namespace Yarn.Unity.Editor
         /// <param name="filterQuery">Asset query (see <see cref="AssetDatabase.FindAssets(string)"/> documentation for formatting).</param>
         /// <param name="converter">Custom type caster.</param>
         /// <returns>Enumerable of all assets of a given type.</returns>
-        public static IEnumerable<T> GetAllAssetsOf<T>(string filterQuery, System.Func<AssetImporter, T> converter = null) where T : class
+        public static IEnumerable<T> GetAllAssetsOf<T>(string filterQuery, System.Func<AssetImporter, T>? converter = null) where T : class
             => AssetDatabase.FindAssets(filterQuery)
                 .Select(AssetDatabase.GUIDToAssetPath)
                 .Select(AssetImporter.GetAtPath)
                 .Select(importer => converter?.Invoke(importer) ?? importer as T)
-                .Where(source => source != null);
+                .Where(source => source != null)!;
     }
 }
