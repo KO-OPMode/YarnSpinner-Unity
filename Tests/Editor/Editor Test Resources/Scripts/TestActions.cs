@@ -11,6 +11,14 @@ namespace Yarn.Unity
     {
         public const string ConstantFunctionName = "constant_name";
 
+        private class NestedClass
+        {
+            public void RegisterActionsInNestedClass(DialogueRunner runner)
+            {
+                runner.AddFunction("direct_register_nested_class", TestActions.DemoFunction1);
+            }
+        }
+
         public void Awake()
         {
             var runner = FindAnyObjectByType<DialogueRunner>();
@@ -44,7 +52,15 @@ namespace Yarn.Unity
                 runner.AddFunction(LocalConstantFunctionName, () => true);
                 runner.AddFunction(ConstantFunctionName, () => true);
                 runner.AddFunction(OtherType.ConstNameInOtherType, () => true);
+
+                runner.AddFunction(ConstFunctionNamesInOtherFile.DirectRegisterExternalFileFunctionNameLambda, () => true);
+                runner.AddFunction(ConstFunctionNamesInOtherFile.DirectRegisterExternalFileFunctionNameMethod, FunctionWithExternalName);
             }
+        }
+
+        private bool FunctionWithExternalName()
+        {
+            return true;
         }
 
         private bool DirectRegisterMethodNoParams() => true;
@@ -131,6 +147,18 @@ namespace Yarn.Unity
         public void VariadicStaticFunction(int required, params bool[] bools)
         {
             Debug.Log($"Variadic static function: {required}, ({string.Join(", ", bools)})");
+        }
+
+        [YarnFunction(ConstFunctionNamesInOtherFile.StaticExternalFileFunctionName)]
+        public static bool StaticExternalFunctionName()
+        {
+            return true;
+        }
+
+        [YarnCommand(ConstFunctionNamesInOtherFile.StaticExternalFileCommandName)]
+        public static void StaticExternalCommandName()
+        {
+            Debug.Log("Static command with externally-defined name");
         }
     }
 }

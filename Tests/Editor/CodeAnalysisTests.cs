@@ -21,13 +21,16 @@ namespace Yarn.Unity.Tests
 {
     public class CodeAnalysisTests
     {
-        const string testScriptGUID = "32f15ac5211d54a68825dfb9532e93f4";
+        readonly string[] testScriptGUIDs = new string[] {
+            "32f15ac5211d54a68825dfb9532e93f4",
+            "38cc17b47f2af4fb5a9f4837db188e62",
+        };
 
         string OutputFilePath => YarnTestUtility.TestFilesDirectoryPath + "YarnActionRegistration.cs";
 
-        string TestScriptPathSource => AssetDatabase.GUIDToAssetPath(testScriptGUID);
+        IEnumerable<string> TestScriptPathSources => testScriptGUIDs.Select(g => AssetDatabase.GUIDToAssetPath(g));
 
-        string TestScriptPathInProject => YarnTestUtility.TestFilesDirectoryPath + Path.GetFileName(TestScriptPathSource);
+        string TestScriptFolderInProject => YarnTestUtility.TestFilesDirectoryPath;
 
         string TestNamespace => "Yarn.Unity.Generated." + TestContext.CurrentContext.Test.MethodName;
 
@@ -42,6 +45,7 @@ namespace Yarn.Unity.Tests
             "static_demo_action_with_optional_params",
             "instance_variadic",
             "static_variadic",
+            "external_file_command",
         };
 
         readonly string[] expectedFunctions = new string[] {
@@ -56,6 +60,10 @@ namespace Yarn.Unity.Tests
             "local_constant_name",
             "other_type_constant",
             "constant_name",
+            "direct_register_external_file_function_lambda",
+            "direct_register_external_file_function_method",
+            "direct_register_nested_class",
+            "external_file_function",
         };
 
         private void SetUpTestActionCode()
@@ -65,7 +73,11 @@ namespace Yarn.Unity.Tests
                 AssetDatabase.CreateFolder("Assets", YarnTestUtility.TestFolderName);
             }
 
-            AssetDatabase.CopyAsset(TestScriptPathSource, TestScriptPathInProject);
+            foreach (var source in TestScriptPathSources)
+            {
+                AssetDatabase.CopyAsset(source, Path.Combine(TestScriptFolderInProject, Path.GetFileName(source)));
+            }
+
         }
         private void TearDownTestActionCode()
         {
@@ -83,7 +95,7 @@ namespace Yarn.Unity.Tests
                 // Generate source code from our test script, save the resulting
                 // source code in the proejct, and validate that everything still
                 // compiles.
-                var analysis = new Yarn.Unity.ActionAnalyser.Analyser(TestScriptPathInProject);
+                var analysis = new Yarn.Unity.ActionAnalyser.Analyser(TestScriptFolderInProject);
                 var actions = analysis.GetActions();
                 var source = Yarn.Unity.ActionAnalyser.Analyser.GenerateRegistrationFileSource(actions, TestNamespace);
 
@@ -101,26 +113,35 @@ namespace Yarn.Unity.Tests
         [Test]
         public void CodeAnalysis_FindsExpectedActions()
         {
-            var analysis = new Yarn.Unity.ActionAnalyser.Analyser(TestScriptPathSource);
-            var actions = analysis.GetActions();
-            var generatedSource = ActionAnalyser.Analyser.GenerateRegistrationFileSource(actions, TestNamespace);
-
-            var commands = actions.Where(a => a.Type == ActionAnalyser.ActionType.Command);
-            var functions = actions.Where(a => a.Type == ActionAnalyser.ActionType.Function);
-
-            foreach (var commandName in expectedCommands)
+            try
             {
-                commands.Should().Contain(c => c.Name == commandName, $"command {commandName} should be found");
+                SetUpTestActionCode();
 
-                var matchRegex = new Regex($@"AddCommandHandler(<.*>)?\(""{commandName}""");
-                generatedSource.Should().Match(matchRegex, $"command {commandName} should be registered in the generated source");
+                var analysis = new Yarn.Unity.ActionAnalyser.Analyser(TestScriptFolderInProject);
+                var actions = analysis.GetActions();
+                var generatedSource = ActionAnalyser.Analyser.GenerateRegistrationFileSource(actions, TestNamespace);
+
+                var commands = actions.Where(a => a.Type == ActionAnalyser.ActionType.Command);
+                var functions = actions.Where(a => a.Type == ActionAnalyser.ActionType.Function);
+
+                foreach (var commandName in expectedCommands)
+                {
+                    commands.Should().ContainSingle(c => c.Name == commandName, $"command {commandName} should be found");
+
+                    var matchRegex = new Regex($@"AddCommandHandler(<.*>)?\(""{commandName}""");
+                    generatedSource.Should().Match(matchRegex, $"command {commandName} should be registered in the generated source");
+                }
+
+                foreach (var functionName in expectedFunctions)
+                {
+                    functions.Should().ContainSingle(c => c.Name == functionName, $"function {functionName} should be found");
+                    var matchRegex = new Regex($@"RegisterFunctionDeclaration\(""{functionName}""");
+                    generatedSource.Should().Match(matchRegex, $"function {functionName} should be registered in the generated source");
+                }
             }
-
-            foreach (var functionName in expectedFunctions)
+            finally
             {
-                functions.Should().Contain(c => c.Name == functionName, $"function {functionName} should be found");
-                var matchRegex = new Regex($@"RegisterFunctionDeclaration\(""{functionName}""");
-                generatedSource.Should().Match(matchRegex, $"function {functionName} should be registered in the generated source");
+                TearDownTestActionCode();
             }
         }
 
@@ -149,8 +170,7 @@ namespace Yarn.Unity.Tests
             {
                 // Given: a .cs file containing actions is added to the codebase
                 SetUpTestActionCode();
-                AssetDatabase.Refresh();
-                yield return new RecompileScripts(expectScriptCompilation: false, expectScriptCompilationSuccess: true);
+                yield return new RecompileScripts(expectScriptCompilation: true, expectScriptCompilationSuccess: true);
 
                 var registrationMethods = Actions.ActionRegistrationMethods;
 

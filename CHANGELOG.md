@@ -8,7 +8,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+### Changed
+
+- Fixed a compiler error that occurred when the Unity Input System was enabled, but not actually installed.
+- Fixed an error where calls to `DialogueRunner.AddFunction()` in methods that are in nested classes would cause the function to be registered multiple times, leading to compiler failures.
+
+### Removed
+
+## [3.0.3] 2025-06-21
+
+### Added
+
+- Added a `[br /]` markup tag into the common markers default markup palette.
+  - This will be translated into a TextMeshPro `<br>` marker.
+- Line Advancer will now fall back to using key codes if Input Actions are selected, but Unity Input System is not available.
+- The Dialogue System prefab now creates a UI input module that matches your current input system when it's added to the scene, rather than baking in a specific input module.
+
+### Changed
+
+- Fixed a bug where `LinePresenter` would not run all registered action markup handlers during a typewriter effect.
+- Fixed an issue where the default Dialogue Runner prefab didn't have its `LineAdvancer` component configured correctly.
+- Renamed `actionMarkupHandlers` to be `eventHandlers` on the `LinePresenter`, this fixes an easy to occur typo with the base classes `ActionMarkupHandlers`.
+- Fixed an issue where Line Advancers set to use Key Codes would not work when the Legacy Input Manager is not available.
+
+## [3.0.2] 2025-06-13
+
+### Added
+
 - The inspector for the Dialogue Runner now has a drop down for selecting the saliency strategy.
+- `VariableStorageBehaviour` now supports adding a variable change listener for _all_ variables.
 
 ### Changed
 
@@ -18,6 +46,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Fixed an issue in UnityLocalisedLineProvider where an exception would be thrown if an asset table was not provided.
 
 ### Removed
+
+- `SerializableDictionary<TKey,TValue>` no longer exposes non-generic `IDictionary` methods; instead, all operations are now correctly type-checked.
 
 ## [3.0.0] 2025-05-16
 
