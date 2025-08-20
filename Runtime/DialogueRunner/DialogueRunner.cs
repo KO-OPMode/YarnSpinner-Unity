@@ -575,6 +575,65 @@ namespace Yarn.Unity
             onNodeStart?.Invoke(startedNodeName);
         }
 
+        // KO_OP custom start
+        
+        /// <summary>
+        /// Fires a command from a provided string. Can be called from anywhere, including outside of any dialogue.
+        /// This is not the intended purpose of Yarn's command system and may cause issues.
+        /// <para/>
+        /// this is a <b>KO_OP custom method</b>(tm)
+        /// </summary>
+        public void FireCommandFromString(string commandString)
+        {
+            FireCommandFromStringAsync(commandString);
+        }
+
+        private async void FireCommandFromStringAsync(string commandString)
+        {
+            CommandDispatchResult dispatchResult = this.CommandDispatcher.DispatchCommand(commandString, this);
+
+            var parts = SplitCommandText(commandString);
+            string commandName = parts.ElementAtOrDefault(0);
+
+            switch (dispatchResult.Status)
+            {
+                case CommandDispatchResult.StatusType.Succeeded:
+                    // The command succeeded. Wait for it to complete. (In the
+                    // case of commands that complete synchronously, this task
+                    // will be Task.Completed, so this 'await' will return
+                    // immediately.)
+                    await dispatchResult.Task;
+                    break;
+                case CommandDispatchResult.StatusType.NoTargetFound:
+                    Debug.LogError($"Can't call command <<{commandString}>>: failed to find a game object named {parts.ElementAtOrDefault(1)}", this);
+                    break;
+                case CommandDispatchResult.StatusType.TargetMissingComponent:
+                    Debug.LogError($"Can't call command <<{commandString}>>, because {parts.ElementAtOrDefault(1)} doesn't have the correct component");
+                    break;
+                case CommandDispatchResult.StatusType.InvalidParameterCount:
+                    Debug.LogError($"Can't call command <<{commandString}>>: {dispatchResult.Message ?? "incorrect number of parameters"}");
+                    break;
+                case CommandDispatchResult.StatusType.CommandUnknown:
+                    // Attempt a last-ditch dispatch by invoking our 'onCommand'
+                    // Unity Event.
+                    if (onUnhandledCommand != null && onUnhandledCommand.GetPersistentEventCount() > 0)
+                    {
+                        // We can invoke the event!
+                        onUnhandledCommand.Invoke(commandString);
+                    }
+                    else
+                    {
+                        // We're out of ways to handle this command! Log this as an
+                        // error.
+                        Debug.LogError($"No Command \"{commandName}\" was found. Did you remember to use the YarnCommand attribute or AddCommandHandler() function in C#?");
+                    }
+                    return;
+                default:
+                    throw new ArgumentOutOfRangeException($"Internal error: Unknown command dispatch result status {dispatchResult}");
+            }
+        }
+        // KO_OP custom end
+
         private void OnCommandReceived(Command command)
         {
             OnCommandReceivedAsync(command).Forget();
