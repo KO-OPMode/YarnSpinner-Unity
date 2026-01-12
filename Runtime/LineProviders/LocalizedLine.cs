@@ -62,6 +62,17 @@ namespace Yarn.Unity
         public Object? Asset;
 
         /// <summary>
+        /// The object that created this line.
+        /// Most of the time will be the <see cref="DialogueRunner"/> that passed the presenter the line.
+        /// </summary>
+        /// <remarks>
+        /// This exists for situations where you need the dialogue runner (or your custom equivalent) to send back messages.
+        /// In particular this is used by the <see cref="VoiceOverPresenter"/> to get a reference to the dialogue runner to advance lines after playback is finished without needing a specific reference.
+        /// Allowing the presenter to be reused across multiple runners.
+        /// </remarks>
+        public object? Source;
+
+        /// <summary>
         /// The underlying <see cref="Yarn.Markup.MarkupParseResult"/> for this
         /// line.
         /// </summary>
@@ -82,7 +93,12 @@ namespace Yarn.Unity
                 // If a 'character' attribute is present, remove its text
                 if (Text.TryGetAttributeWithName("character", out var characterNameAttribute))
                 {
-                    return Text.DeleteRange(characterNameAttribute);
+                    // because of how we delete the text we also clear up the attributes
+                    // most of the time this is the right play
+                    // however the character feels important enough to add it back in
+                    var characterless = Text.DeleteRange(characterNameAttribute);
+                    characterless.Attributes.Add(characterNameAttribute);
+                    return characterless;
                 }
                 else
                 {

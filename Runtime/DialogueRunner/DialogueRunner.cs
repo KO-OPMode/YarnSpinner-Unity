@@ -10,7 +10,6 @@ using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UIElements;
 using Yarn.Unity.Attributes;
-using Yarn.Unity.Legacy;
 
 #nullable enable
 
@@ -35,8 +34,10 @@ namespace Yarn.Unity
         /// the current line. For example, on-screen UI should be dismissed, and
         /// any ongoing audio playback should be stopped.
         /// </summary>
-        public CancellationToken NextLineToken;
+        [System.Obsolete("Please use NextContentToken instead")]
+        public readonly CancellationToken NextLineToken => NextContentToken;
 
+        public CancellationToken NextContentToken;
 
         // this token will ALWAYS be a dependant token on the above 
 
@@ -65,7 +66,10 @@ namespace Yarn.Unity
         /// If this property is <see langword="true"/>, then <see
         /// cref="IsHurryUpRequested"/> will also be true.</para>
         /// </remarks>
+        [System.Obsolete("Please use IsNextContentRequested instead")]
         public readonly bool IsNextLineRequested => NextLineToken.IsCancellationRequested;
+
+        public readonly bool IsNextContentRequested => NextContentToken.IsCancellationRequested;
 
         /// <summary>
         /// Gets a value indicating whether the user has requested that the line
@@ -115,6 +119,18 @@ namespace Yarn.Unity
                     dialogue.DialogueCompleteHandler = OnDialogueCompleted;
                     dialogue.PrepareForLinesHandler = OnPrepareForLines;
 
+                    dialogue.LogDebugMessage = delegate (string message)
+                    {
+                        if (verboseLogging)
+                        {
+                            Debug.Log(message, this);
+                        }
+                    };
+                    dialogue.LogErrorMessage = delegate (string message)
+                    {
+                        Debug.LogError(message, this);
+                    };
+
                     if (yarnProject != null)
                     {
                         Dialogue.SetProgram(yarnProject.Program);
@@ -162,6 +178,10 @@ namespace Yarn.Unity
                 // InMemoryVariableStorage and use that.
                 if (variableStorage == null)
                 {
+                    if (verboseLogging)
+                    {
+                        Debug.Log($"Dialogue Runner has no Variable Storage; creating a {nameof(InMemoryVariableStorage)}", this);
+                    }
                     this.variableStorage = gameObject.AddComponent<InMemoryVariableStorage>();
                 }
                 if (this.variableStorage.Program == null && this.YarnProject != null)
@@ -198,6 +218,11 @@ namespace Yarn.Unity
                             $"Line text and assets will not be available.", this);
                     }
 
+                    if (verboseLogging)
+                    {
+                        Debug.Log($"Dialogue Runner has no LineProvider; creating a {nameof(BuiltinLocalisedLineProvider)}.", this);
+                    }
+
                     lineProvider = gameObject.AddComponent<BuiltinLocalisedLineProvider>();
                     lineProvider.YarnProject = yarnProject;
                 }
@@ -212,6 +237,13 @@ namespace Yarn.Unity
         [Space]
         [UnityEngine.Serialization.FormerlySerializedAs("dialogueViews")]
         [SerializeField] List<DialoguePresenterBase?> dialoguePresenters = new List<DialoguePresenterBase?>();
+
+        /// <summary>
+        /// If true, will print Debug.Log messages every time it enters a
+        /// node, and other frequent events.
+        /// </summary>
+        [Tooltip("If true, will print Debug.Log messages every time it enters a node, and other frequent events")]
+        public bool verboseLogging = false;
 
         /// <summary>
         /// Gets a value that indicates if the dialogue is actively
@@ -252,6 +284,8 @@ namespace Yarn.Unity
         /// </remarks>
         [Group("Behaviour")]
         public bool runSelectedOptionAsLine = false;
+
+        [SerializeField] private bool allowOptionFallthrough = true;
 
         /// <summary>
         /// A Unity event that is called when a node starts running.
@@ -362,7 +396,13 @@ namespace Yarn.Unity
         private CancellationTokenSource? dialogueCancellationSource;
         private CancellationTokenSource? currentLineCancellationSource;
         private CancellationTokenSource? currentLineHurryUpSource;
+
+        private CancellationTokenSource? currentOptionsHurryUpSource;
+        private CancellationTokenSource? currentOptionsCancellationSource;
+
+
         private YarnTaskCompletionSource? dialogueCompletionSource;
+        private YarnTaskCompletionSource? dialogueCancellationCompletion;
 
         internal ICommandDispatcher CommandDispatcher
         {
@@ -428,31 +468,43 @@ namespace Yarn.Unity
             }
 
             switch (this.saliencyStrategy)
-                {
-                    case SaliencyStrategy.RandomBestLeastRecentlyViewed:
-                        this.dialogue.ContentSaliencyStrategy = new Saliency.RandomBestLeastRecentlyViewedSaliencyStrategy(this.VariableStorage);
-                        return;
-                    case SaliencyStrategy.FirstBestLeastRecentlyViewed:
-                        this.dialogue.ContentSaliencyStrategy = new Yarn.Saliency.BestLeastRecentlyViewedSaliencyStrategy(this.VariableStorage);
-                        return;
-                    case SaliencyStrategy.Best:
-                        this.dialogue.ContentSaliencyStrategy = new Yarn.Saliency.BestSaliencyStrategy();
-                        return;
-                    case SaliencyStrategy.First:
-                        this.dialogue.ContentSaliencyStrategy = new Yarn.Saliency.FirstSaliencyStrategy();
-                        return;
-                }
+            {
+                case SaliencyStrategy.RandomBestLeastRecentlyViewed:
+                    this.dialogue.ContentSaliencyStrategy = new Saliency.RandomBestLeastRecentlyViewedSaliencyStrategy(this.VariableStorage);
+                    return;
+                case SaliencyStrategy.FirstBestLeastRecentlyViewed:
+                    this.dialogue.ContentSaliencyStrategy = new Yarn.Saliency.BestLeastRecentlyViewedSaliencyStrategy(this.VariableStorage);
+                    return;
+                case SaliencyStrategy.Best:
+                    this.dialogue.ContentSaliencyStrategy = new Yarn.Saliency.BestSaliencyStrategy();
+                    return;
+                case SaliencyStrategy.First:
+                    this.dialogue.ContentSaliencyStrategy = new Yarn.Saliency.FirstSaliencyStrategy();
+                    return;
+            }
         }
 
         /// <summary>
         /// Called by Unity to start running dialogue if <see cref="autoStart"/>
         /// is enabled.
         /// </summary>
-        private void Start()
+        private async void Start()
         {
             if (autoStart)
             {
-                StartDialogue(startNode);
+                try
+                {
+                    // there are numerous situations where kicking off dialogue immediately from Start causes annoying issues around timing of different game objects
+                    // while these can all be fixed it it much easier in our case to just wait one frame before starting.
+                    // This still has the same feel of the older start automatically but just simplifies so many things.
+                    // For situations where you absolutely must start immediately call StartDialogue yourself.
+                    await YarnTask.Yield();
+                    await StartDialogue(startNode);
+                }
+                catch (System.OperationCanceledException ex)
+                {
+                    Debug.LogException(ex);
+                }
             }
         }
 
@@ -460,9 +512,12 @@ namespace Yarn.Unity
         /// Stops the dialogue immediately, and cancels any currently running
         /// dialogue presenters.
         /// </summary>
-        public void Stop()
+        public async YarnTask Stop()
         {
+            dialogueCancellationCompletion = new YarnTaskCompletionSource();
             CancelDialogue();
+            await dialogueCancellationCompletion.Task;
+            dialogueCancellationCompletion = null;
         }
 
         /// <summary>
@@ -560,19 +615,55 @@ namespace Yarn.Unity
             // Wait for all views to finish doing their clean up
             await YarnTask.WhenAll(pendingTasks);
 
-            // Finally, notify that dialogue is complete.
+            // Finally, notify that dialogue is complete and tidy up.
             dialogueCompletionSource?.TrySetResult();
             onDialogueComplete?.Invoke();
+
+            dialogueCancellationSource?.Dispose();
+            dialogueCancellationSource = null;
+            dialogueCompletionSource = null;
+
+            // finally we flag the cancellation as done
+            // this lets stop know that all views have been informed as to the cancellation
+            dialogueCancellationCompletion?.TrySetResult();
         }
 
         private void OnNodeCompleted(string completedNodeName)
         {
             onNodeComplete?.Invoke(completedNodeName);
+            foreach (var presenter in dialoguePresenters)
+            {
+                if (presenter == null)
+                {
+                    continue;
+                }
+
+                if (presenter.enabled == false)
+                {
+                    continue;
+                }
+
+                presenter.OnNodeExit(completedNodeName);
+            }
         }
 
         private void OnNodeStarted(string startedNodeName)
         {
             onNodeStart?.Invoke(startedNodeName);
+            foreach (var presenter in dialoguePresenters)
+            {
+                if (presenter == null)
+                {
+                    continue;
+                }
+
+                if (presenter.enabled == false)
+                {
+                    continue;
+                }
+
+                presenter.OnNodeEnter(startedNodeName);
+            }
         }
 
         // KO_OP custom start
@@ -649,11 +740,18 @@ namespace Yarn.Unity
             switch (dispatchResult.Status)
             {
                 case CommandDispatchResult.StatusType.Succeeded:
-                    // The command succeeded. Wait for it to complete. (In the
-                    // case of commands that complete synchronously, this task
-                    // will be Task.Completed, so this 'await' will return
-                    // immediately.)
-                    await dispatchResult.Task;
+                    if (dispatchResult.Task.IsCompletedSuccessfully())
+                    {
+                        // The command was dispatched and completed
+                        // synchronously.
+                        Dialogue.SignalContentComplete();
+                    }
+                    else
+                    {
+                        // The command has successfully dispatched, but has not
+                        // yet finished running. Wait for it to finish.
+                        await dispatchResult.Task;
+                    }
                     break;
                 case CommandDispatchResult.StatusType.NoTargetFound:
                     Debug.LogError($"Can't call command <<{command.Text}>>: failed to find a game object named {parts.ElementAtOrDefault(1)}", this);
@@ -702,6 +800,7 @@ namespace Yarn.Unity
         private async YarnTask OnLineReceivedAsync(Line line)
         {
             var localisedLine = await LineProvider.GetLocalizedLineAsync(line, dialogueCancellationSource?.Token ?? CancellationToken.None);
+            localisedLine.Source = this;
 
             if (localisedLine == LocalizedLine.InvalidLine)
             {
@@ -749,7 +848,7 @@ namespace Yarn.Unity
             currentLineHurryUpSource = CancellationTokenSource.CreateLinkedTokenSource(currentLineCancellationSource.Token);
             var metaToken = new LineCancellationToken
             {
-                NextLineToken = currentLineCancellationSource.Token,
+                NextContentToken = currentLineCancellationSource.Token,
                 HurryUpToken = currentLineHurryUpSource.Token,
             };
 
@@ -769,16 +868,6 @@ namespace Yarn.Unity
                     continue;
                 }
 
-                // Legacy support: if this view is an v2-style DialogueViewBase,
-                // then set its requestInterrupt delegate to be one that stops
-                // the current line.
-#pragma warning disable CS0618 // 'construct' is obsolete
-                if (view is DialogueViewBase dialogueView)
-                {
-                    dialogueView.requestInterrupt = RequestNextLine;
-                }
-#pragma warning restore CS0618 // 'construct' is obsolete
-
                 // Tell all of our views to run this line, and give them a
                 // cancellation token they can use to interrupt the line if needed.
 
@@ -789,8 +878,19 @@ namespace Yarn.Unity
                         // Run the line and wait for it to finish
                         await view.RunLineAsync(localisedLine, token);
                     }
+                    catch (System.OperationCanceledException)
+                    {
+                        // The line presenter cancelled (rather than returning.)
+                        // This probably wasn't intended - they should clean up
+                        // and return null.
+                        Debug.LogWarning($"Dialogue presenter {view.name} threw an {nameof(System.OperationCanceledException)} when running its {nameof(DialoguePresenterBase.RunLineAsync)} method. Dialogue presenters should not throw this exception; instead, clean up any needed user-facing content, and return.", view);
+                    }
                     catch (System.Exception e)
                     {
+                        // If a dialogue presenter throws an exception, we need
+                        // to return, because the dialogue runner is waiting for
+                        // our task to complete. We'll log the exception so that
+                        // it's not lost, and exit here.
                         Debug.LogException(e, view);
                     }
                 }
@@ -801,7 +901,16 @@ namespace Yarn.Unity
             }
 
             // Wait for all line view tasks to finish delivering the line.
-            await YarnTask.WhenAll(pendingTasks);
+            var waitForAllLines = YarnTask.WhenAll(pendingTasks);
+            if (waitForAllLines.IsCompletedSuccessfully())
+            {
+                // All lines completed synchronously. Signal that we're done.
+                Dialogue.SignalContentComplete();
+            }
+            else
+            {
+                await waitForAllLines;
+            }
 
             // We're done; dispose of the cancellation sources. (Null-check them because if we're leaving play mode, then these references may no longer be valid.)
 
@@ -819,25 +928,37 @@ namespace Yarn.Unity
 
         private async YarnTask OnOptionsReceivedAsync(OptionSet options)
         {
+            // if we have an existing cancellation and hurry up source we want to clean those up first.
+            currentOptionsCancellationSource?.Dispose();
+            currentOptionsHurryUpSource?.Dispose();
+
             // Create a cancellation source that represents 'we don't need you to
             // select an option anymore'. Link it to the dialogue cancellation
             // source, so that if dialogue gets cancelled, all options get
             // cancelled.
-            CancellationTokenSource optionCancellationSource;
             if (dialogueCancellationSource != null)
             {
-                optionCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(dialogueCancellationSource.Token);
+                currentOptionsCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(dialogueCancellationSource.Token);
             }
             else
             {
-                optionCancellationSource = new CancellationTokenSource();
+                currentOptionsCancellationSource = new CancellationTokenSource();
             }
+
+            // now we make a new dependant hurry up cancellation token
+            currentOptionsHurryUpSource = CancellationTokenSource.CreateLinkedTokenSource(currentOptionsCancellationSource.Token);
+            var metaToken = new LineCancellationToken
+            {
+                NextContentToken = currentOptionsCancellationSource.Token,
+                HurryUpToken = currentOptionsHurryUpSource.Token,
+            };
 
             DialogueOption[] localisedOptions = new DialogueOption[options.Options.Length];
             for (int i = 0; i < options.Options.Length; i++)
             {
                 var opt = options.Options[i];
-                LocalizedLine localizedLine = await LineProvider.GetLocalizedLineAsync(opt.Line, optionCancellationSource.Token);
+                LocalizedLine localizedLine = await LineProvider.GetLocalizedLineAsync(opt.Line, currentOptionsCancellationSource.Token);
+                localizedLine.Source = this;
 
                 if (localizedLine == LocalizedLine.InvalidLine)
                 {
@@ -853,7 +974,7 @@ namespace Yarn.Unity
                 };
             }
 
-            var dialogueSelectionTCS = new YarnTaskCompletionSource<DialogueOption?>();
+            DialogueOption? selectedOption = null;
 
             async YarnTask WaitForOptionsView(DialoguePresenterBase? view)
             {
@@ -861,13 +982,32 @@ namespace Yarn.Unity
                 {
                     return;
                 }
-                var result = await view.RunOptionsAsync(localisedOptions, optionCancellationSource.Token);
-                if (result != null)
+                try
                 {
-                    // We no longer need the other views, so tell them to stop
-                    // by cancelling the option selection.
-                    optionCancellationSource.Cancel();
-                    dialogueSelectionTCS.TrySetResult(result);
+                    var result = await view.RunOptionsAsync(localisedOptions, metaToken);
+                    if (result != null)
+                    {
+                        // We no longer need the other views, so tell them to stop
+                        // by cancelling the option selection.
+                        currentOptionsCancellationSource.Cancel();
+                        selectedOption = result;
+                    }
+                }
+                catch (System.OperationCanceledException)
+                {
+                    // The options presenter cancelled (rather than returning
+                    // null.) This probably wasn't intended - they should clean
+                    // up and return null.
+                    Debug.LogWarning($"Dialogue presenter {view.name} threw an {nameof(System.OperationCanceledException)} when running its {nameof(DialoguePresenterBase.RunOptionsAsync)} method. Dialogue presenters should not throw this exception; instead, clean up any needed user-facing content, and return null.", view);
+                }
+                catch (System.Exception ex)
+                {
+                    // If a dialogue presenter throws an exception, we still
+                    // need to return a value, because the dialogue runner is
+                    // waiting for our task to complete. We'll log the exception
+                    // so that it's not lost, and exit here.
+                    Debug.LogException(ex, view);
+                    return;
                 }
             }
 
@@ -881,22 +1021,8 @@ namespace Yarn.Unity
             // at this point now every view has finished their handling of the options
             // the first one to return a non-null value will be the one that is chosen option
             // or if everyone returned null that's an error
-            DialogueOption? selectedOption;
 
-            try
-            {
-                selectedOption = await dialogueSelectionTCS.Task;
-            }
-            catch (Exception e)
-            {
-                // If a view threw an exception while getting the option,
-                // propagate it
-                Debug.LogException(e);
-                return;
-                // throw;
-            }
-
-            optionCancellationSource.Dispose();
+            currentOptionsCancellationSource.Dispose();
 
             if (dialogueCancellationSource?.IsCancellationRequested ?? false)
             {
@@ -904,23 +1030,29 @@ namespace Yarn.Unity
                 // choice. Stop here, and do not provide it to the Dialogue.
                 return;
             }
-
             else if (selectedOption == null)
             {
-                // None of our option views returned an option, and our dialogue
-                // wasn't cancelled. That's not allowed, because we don't know what
-                // to do next!
-                Debug.LogError($"No dialogue view returned an option selection! Hanging here!");
-                return;
+                if (allowOptionFallthrough)
+                {
+                    Dialogue.SetSelectedOption(Dialogue.NoOptionSelected);
+                }
+                else
+                {
+                    // None of our option views returned an option, and our dialogue wasn't cancelled, and we've said we don't want to do fallthrough.
+                    // That's not allowed, because we don't know what to do next!
+                    Debug.LogError($"All presenters have returned from {nameof(DialoguePresenterBase.RunOptionsAsync)} but none returned an option, and fallthrough is disabled. This is not allowed.");
+                    return;
+                }
             }
-
-            Dialogue.SetSelectedOption(selectedOption.DialogueOptionID);
-
-            if (runSelectedOptionAsLine)
+            else
             {
-                // Run the selected option's line content as though we had received
-                // it as a line.
-                await RunLocalisedLine(selectedOption.Line);
+                Dialogue.SetSelectedOption(selectedOption.DialogueOptionID);
+                if (runSelectedOptionAsLine)
+                {
+                    // Run the selected option's line content as though we had received
+                    // it as a line.
+                    await RunLocalisedLine(selectedOption.Line);
+                }
             }
 
             if (dialogueCancellationSource?.IsCancellationRequested ?? false)
@@ -968,7 +1100,7 @@ namespace Yarn.Unity
         /// <remarks><paramref name="nodeName"/> must be the name of a node in
         /// <see cref="YarnProject"/>.</remarks>
         /// <param name="nodeName">The name of the node to run.</param>
-        public void StartDialogue(string nodeName)
+        public async YarnTask StartDialogue(string nodeName)
         {
             if (yarnProject == null)
             {
@@ -1000,25 +1132,20 @@ namespace Yarn.Unity
 
             onDialogueStart?.Invoke();
 
-            StartDialogueAsync().Forget();
-
-            async YarnTask StartDialogueAsync()
+            var tasks = new List<YarnTask>();
+            foreach (var view in DialoguePresenters)
             {
-                var tasks = new List<YarnTask>();
-                foreach (var view in DialoguePresenters)
+                if (view == null)
                 {
-                    if (view == null)
-                    {
-                        continue;
-                    }
-                    tasks.Add(view.OnDialogueStartedAsync());
+                    continue;
                 }
-                await YarnTask.WhenAll(tasks);
-
-                // KO_OP custom start
-                ContinueAndCatchExceptions();
-                // KO_OP custom end
+                tasks.Add(view.OnDialogueStartedAsync());
             }
+            await YarnTask.WhenAll(tasks);
+
+            // KO_OP custom start
+            ContinueAndCatchExceptions();
+            // KO_OP custom end
         }
 
         /// <summary>
@@ -1084,11 +1211,25 @@ namespace Yarn.Unity
             currentLineHurryUpSource.Cancel();
         }
 
+        public void RequestHurryUpOption()
+        {
+            if (currentOptionsCancellationSource == null)
+            {
+                return;
+            }
+            if (currentOptionsHurryUpSource == null)
+            {
+                return;
+            }
+
+            currentOptionsHurryUpSource.Cancel();
+        }
+
         // KO_OP custom start
         /// <summary>
         /// Invoke Dialogue.Continue() within try-catch for resiliency against badly configured Yarn files
         /// </summary>
-        private void ContinueAndCatchExceptions() 
+        private void ContinueAndCatchExceptions()
         {
             try
             {
@@ -1098,15 +1239,15 @@ namespace Yarn.Unity
             catch (DialogueException e)
             {
                 Debug.LogException(e);
-                
+
                 // Can't call CancelDialogue() since we set the VM state to Stopped() before throwing the exception,
                 // which causes CancelDialogue() to early-out
                 // CancelDialogue();
-                
+
                 // Notify listeners that we're done
                 Dialogue?.Stop();
             }
-            // KO_OP custom end
         }
+        // KO_OP custom end
     }
 }

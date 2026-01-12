@@ -50,6 +50,7 @@ namespace Yarn.Unity.Editor
                 var linkingAttributedFuncs = unsavedSettings.automaticallyLinkAttributedYarnCommandsAndFunctions;
                 var generateYSLS = unsavedSettings.generateYSLSFile;
                 var enableDirectLinkToVSCode = unsavedSettings.enableDirectLinkToVSCode;
+                var sortLocalisationValuesInsideStringTable = unsavedSettings.sortLocalisationValuesInsideStringTable;
 
                 using (new EditorGUI.IndentLevelScope())
                 {
@@ -67,6 +68,13 @@ namespace Yarn.Unity.Editor
                     EditorGUILayout.LabelField("Generate YSLS file for attributed methods", GUILayout.Width(settingWidth), GUILayout.ExpandWidth(false));
                     generateYSLS = EditorGUILayout.Toggle(unsavedSettings.generateYSLSFile, GUILayout.ExpandWidth(false));
                     EditorGUILayout.EndHorizontal();
+
+#if USE_UNITY_LOCALIZATION
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.LabelField("Keep Unity Localization tables sorted", GUILayout.Width(settingWidth), GUILayout.ExpandWidth(false));
+                    sortLocalisationValuesInsideStringTable = EditorGUILayout.Toggle(unsavedSettings.sortLocalisationValuesInsideStringTable, GUILayout.ExpandWidth(false));
+                    EditorGUILayout.EndHorizontal();
+#endif
                 }
 
                 EditorGUILayout.Space();
@@ -85,6 +93,7 @@ namespace Yarn.Unity.Editor
                     unsavedSettings.automaticallyLinkAttributedYarnCommandsAndFunctions = linkingAttributedFuncs;
                     unsavedSettings.generateYSLSFile = generateYSLS;
                     unsavedSettings.enableDirectLinkToVSCode = enableDirectLinkToVSCode;
+                    unsavedSettings.sortLocalisationValuesInsideStringTable = sortLocalisationValuesInsideStringTable;
                 }
 
                 bool disabledReimportButton = true;
@@ -93,7 +102,8 @@ namespace Yarn.Unity.Editor
                     unsavedSettings.automaticallyLinkAttributedYarnCommandsAndFunctions != baseSettings.automaticallyLinkAttributedYarnCommandsAndFunctions ||
                     unsavedSettings.autoRefreshLocalisedAssets != baseSettings.autoRefreshLocalisedAssets ||
                     unsavedSettings.generateYSLSFile != baseSettings.generateYSLSFile ||
-                    unsavedSettings.enableDirectLinkToVSCode != baseSettings.enableDirectLinkToVSCode
+                    unsavedSettings.enableDirectLinkToVSCode != baseSettings.enableDirectLinkToVSCode ||
+                    unsavedSettings.sortLocalisationValuesInsideStringTable != baseSettings.sortLocalisationValuesInsideStringTable
                 )
                 {
                     disabledReimportButton = false;
@@ -123,12 +133,17 @@ namespace Yarn.Unity.Editor
                         {
                             needsCSharpRecompilation = true;
                         }
+                        if (baseSettings.sortLocalisationValuesInsideStringTable != unsavedSettings.sortLocalisationValuesInsideStringTable)
+                        {
+                            needsYarnProjectReimport = true;
+                        }
 
                         // saving the changed settings out to disk
                         baseSettings.autoRefreshLocalisedAssets = unsavedSettings.autoRefreshLocalisedAssets;
                         baseSettings.automaticallyLinkAttributedYarnCommandsAndFunctions = unsavedSettings.automaticallyLinkAttributedYarnCommandsAndFunctions;
                         baseSettings.generateYSLSFile = unsavedSettings.generateYSLSFile;
                         baseSettings.enableDirectLinkToVSCode = unsavedSettings.enableDirectLinkToVSCode;
+                        baseSettings.sortLocalisationValuesInsideStringTable = unsavedSettings.sortLocalisationValuesInsideStringTable;
                         baseSettings.WriteSettings();
 
                         // now we can reimport

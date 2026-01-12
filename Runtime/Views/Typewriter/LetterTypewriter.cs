@@ -5,15 +5,19 @@ namespace Yarn.Unity
     using System;
     using System.Collections.Generic;
     using System.Threading;
-    using TMPro;
     using UnityEngine;
+#if USE_TMP
+    using TMPro;
+#else
+    using TMP_Text = Yarn.Unity.TMPShim;
+#endif
 
     /// <summary>
     /// An implementation of <see cref="IAsyncTypewriter"/> that delivers
     /// characters one at a time, and invokes any <see
     /// cref="IActionMarkupHandler"/>s along the way as needed.
     /// </summary>
-    public class BasicTypewriter : IAsyncTypewriter
+    public class LetterTypewriter : IAsyncTypewriter
     {
         /// <summary>
         /// The <see cref="TMP_Text"/> to display the text in.
@@ -25,7 +29,7 @@ namespace Yarn.Unity
         /// should be invoked as needed during the typewriter's delivery in <see
         /// cref="RunTypewriter"/>, depending upon the contents of a line.
         /// </summary>
-        public IEnumerable<IActionMarkupHandler> ActionMarkupHandlers { get; set; } = Array.Empty<IActionMarkupHandler>();
+        public List<IActionMarkupHandler> ActionMarkupHandlers { get; set; } = new();
 
         /// <summary>
         /// The number of characters per second to deliver.
@@ -104,6 +108,31 @@ namespace Yarn.Unity
             foreach (var markupHandler in ActionMarkupHandlers)
             {
                 markupHandler.OnLineDisplayComplete();
+            }
+        }
+
+        public void PrepareForContent(Markup.MarkupParseResult line)
+        {
+            if (Text == null)
+            {
+                return;
+            }
+
+            Text.maxVisibleCharacters = 0;
+            Text.text = line.Text;
+
+            foreach (var processor in ActionMarkupHandlers)
+            {
+                processor.OnPrepareForLine(line, Text);
+            }
+        }
+
+        public void ContentWillDismiss()
+        {
+            // we tell all action processors that the line is finished and is about to go away
+            foreach (var processor in ActionMarkupHandlers)
+            {
+                processor.OnLineWillDismiss();
             }
         }
     }

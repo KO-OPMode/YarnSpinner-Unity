@@ -120,7 +120,19 @@ namespace Yarn.Unity
         /// <returns>A task that indicates which option was selected, or that this dialogue presenter did not select an option.</returns>
         /// <seealso cref="RunLineAsync(LocalizedLine, LineCancellationToken)"/>
         /// <seealso cref="YarnAsync.NoOptionSelected"/> 
-        public abstract YarnTask<DialogueOption?> RunOptionsAsync(DialogueOption[] dialogueOptions, CancellationToken cancellationToken);
+        [System.Obsolete("The LineCancellationToken form of RunOptionsAsync allows for option cancellation and hurrying up and is prefered.")]
+        public virtual YarnTask<DialogueOption?> RunOptionsAsync(DialogueOption[] dialogueOptions, CancellationToken cancellationToken)
+        {
+            return YarnTask<DialogueOption?>.FromResult(null);
+        }
+
+#pragma warning disable 0618
+        public virtual YarnTask<DialogueOption?> RunOptionsAsync(DialogueOption[] dialogueOptions, LineCancellationToken cancellationToken)
+        {
+            return RunOptionsAsync(dialogueOptions, cancellationToken.NextLineToken);
+        }
+#pragma warning restore 0618
+
 
         /// <summary>Called by the <see cref="DialogueRunner"/> to signal that
         /// dialogue has started.</summary>
@@ -155,11 +167,12 @@ namespace Yarn.Unity
         /// in order to clean up after running dialogue.</returns>
         public abstract YarnTask OnDialogueCompleteAsync();
 
-        /// <summary>
-        /// The collection of action markup handlers that the dialogue presenter
-        /// uses when presenting content.
-        /// </summary>
-        public virtual List<IActionMarkupHandler> ActionMarkupHandlers { get; } = new();
+        // these are virtual because it's quite likely you don't need them
+        // they are also void instead of YarnTask because currently the VM doesn't wait on node enter/exit so we can't either
+        public virtual void OnNodeEnter(string nodeName) { }
+        public virtual void OnNodeExit(string nodeName) { }
+
+        public virtual IAsyncTypewriter? Typewriter { get; set; }
     }
 }
 

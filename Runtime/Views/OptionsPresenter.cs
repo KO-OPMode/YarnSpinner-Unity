@@ -162,8 +162,24 @@ namespace Yarn.Unity
         /// path="/param"/>
         /// <inheritdoc cref="DialoguePresenterBase.RunOptionsAsync"
         /// path="/returns"/>
-        public override async YarnTask<DialogueOption?> RunOptionsAsync(DialogueOption[] dialogueOptions, CancellationToken cancellationToken)
+        public override async YarnTask<DialogueOption?> RunOptionsAsync(DialogueOption[] dialogueOptions, LineCancellationToken cancellationToken)
         {
+            // if all options are unavailable then we need to return null
+            // it's the responsibility of the dialogue runner to handle this, not the presenter
+            bool anyAvailable = false;
+            foreach (var option in dialogueOptions)
+            {
+                if (option.IsAvailable)
+                {
+                    anyAvailable = true;
+                    break;
+                }
+            }
+            if (!anyAvailable)
+            {
+                return null;
+            }
+
             // If we don't already have enough option views, create more
             while (dialogueOptions.Length > optionViews.Count)
             {
@@ -177,13 +193,13 @@ namespace Yarn.Unity
             // A cancellation token source that becomes cancelled when any
             // option item is selected, or when this entire option view is
             // cancelled
-            var completionCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var completionCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken.NextContentToken);
 
             async YarnTask CancelSourceWhenDialogueCancelled()
             {
                 await YarnTask.WaitUntilCanceled(completionCancellationSource.Token);
 
-                if (cancellationToken.IsCancellationRequested == true)
+                if (cancellationToken.IsNextContentRequested == true)
                 {
                     // The overall cancellation token was fired, not just our
                     // internal 'something was selected' cancellation token.
@@ -307,7 +323,7 @@ namespace Yarn.Unity
             if (useFadeEffect && canvasGroup != null)
             {
                 // fade up the UI now
-                await Effects.FadeAlphaAsync(canvasGroup, 0, 1, fadeUpDuration, cancellationToken);
+                await Effects.FadeAlphaAsync(canvasGroup, 0, 1, fadeUpDuration, cancellationToken.HurryUpToken);
             }
 
             // allow interactivity and wait for an option to be selected
@@ -331,7 +347,7 @@ namespace Yarn.Unity
             if (useFadeEffect && canvasGroup != null)
             {
                 // fade down
-                await Effects.FadeAlphaAsync(canvasGroup, 1, 0, fadeDownDuration, cancellationToken);
+                await Effects.FadeAlphaAsync(canvasGroup, 1, 0, fadeDownDuration, cancellationToken.HurryUpToken);
             }
 
             // disabling ALL the options views now
@@ -342,7 +358,7 @@ namespace Yarn.Unity
             await YarnTask.Yield();
 
             // if we are cancelled we still need to return but we don't want to have a selection, so we return no selected option
-            if (cancellationToken.IsCancellationRequested)
+            if (cancellationToken.NextContentToken.IsCancellationRequested)
             {
                 return await DialogueRunner.NoOptionSelected;
             }

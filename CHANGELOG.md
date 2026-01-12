@@ -8,12 +8,156 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- When using the Unity Localization package Yarn Spinner can now sort the localisation tables based on a lines position in the file.
+    - This resolves an issue where lines added into the middle of a Yarn file however this does require sorting your localisation table every time you edit your Yarn files
+    - Defaults to off, can be changed in Yarn Spinners settings in `Edit -> Project Settings -> Yarn Spinner`
+    - Will log any values found in the localisation table that didn't come from your Yarn files and sort them to the top of the table
+
+### Changed
+
+- `YarnProjectImporter` now updates asset addresses and generates the C# variable storage class after the project import completes, rather than during the import.
+
+### Removed
+
+## [3.1.4] 2025-12-19
+
+### Changed
+
+- Fixed an issue that caused build errors when using the Text Animator add-on.
+
+## [3.1.3] 2025-12-09
+
+### Changed
+
+- Fixed an issue that caused OpenUPM downloads to fail to compile.
+
+## [3.1.1] 2025-12-03
+
+### Overview
+
+Yarn Spinner for Unity 3.1 contains a number of improvements and useful changes.
+
+#### Dialogue Runner Is Now More Async
+
+The dialogue runner's `StartDialogue` and `Stop` methods are now `async`, and return a task. When you call `StartDialogue`, you'll receive a task (either a `System.Threading.Tasks` task, a `UnityEngine.Awaitable`, or a `UniTask`) that will complete after every dialogue presenter has finished running its `OnDialogueStartedAsync` method. Likewise, the `Stop` method will finish after every dialogue presenter has finished running its `OnDialogueCompleteAsync` method. This is really useful for making sure that you don't accidentally make a change to your scene in the middle of your dialogue presenters getting ready.
+
+#### Dialogue Option Fallthrough
+
+In Yarn Spinner, you can add a condition to the end of an option. If the condition evaluates to `false`, Yarn Spinner will mark the option as "unavailable". It's up to your game to decide what that means - you might want to make the option visible but unselectable, or you might want to hide the option from the player entirely. However, if _every_ option is unavailable, the player has no option they could select. Previously, this could cause your game to have to soft-lock the player, since they weren't able to proceed.
+
+In Yarn Spinner 3.1, dialogue presenters are now allowed to tell the Dialogue Runner that no option was selected at all. When this happens, Yarn Spinner will skip the options and move on to the next part of the script:
+
+```
+Guard: Who goes there?
+
+// If the player is a thief, a royal visitor, or a merchant, then
+// go run the appropriate conversation for that. The player might be
+// some combination of the three, so let them choose.
+-> A thief! <<if $player_is_thief>>
+    <<jump Guard_Thief_Conversation>>
+-> A royal visitor! <<if $player_is_royal_visitor>>
+    <<jump Guard_RoyalVisitor_Conversation>>
+-> A merchant! <<if $player_is_merchant>>
+    <<jump Guard_Merchant_Conversation>>
+
+// But if the player is NONE of those, then none of the options would have
+// been available. We'll fall through to here.
+
+Player: I'm nobody!
+<<jump Guard_Nobody_Conversation>>
+```
+
+> [!NOTE]
+> You can turn off this behaviour by setting the `allowOptionFallthrough` property on your `DialogueRunner` to `false`.
+
+#### Lines Know Where They Came From
+
+When Yarn Spinner sends a line to your game, it wraps up the line in an object called a [`LocalizedLine`](https://docs.yarnspinner.dev/api/csharp/yarn.unity/yarn.unity.localizedline). Previously, if your game has multiple Dialogue Runners that are running at the same time, it wasn't possible to know which runner the line came from. In Yarn Spinner 3.1, the `LocalizedLine` now has a [`Source`](https://docs.yarnspinner.dev/3.1/api/csharp/yarn.unity/yarn.unity.localizedline/yarn.unity.localizedline.source) property that tells you where it came from.
+
+#### Options Can Now Be Hurried Up And Cancelled
+
+Just like how lines have a separate 'hurry up' and 'next' cancellation tokens that act as a signal to move things along, options now have the same 'hurry up' and 'next' tokens. (Previously, they only had a single cancellation token that signalled that option selection was no longer necessary.) This allows your game to signal that you want to hurry up the presentation of your dialogue's options.
+
+#### New Typewriter System
+
+We've updated the way that typewriters are used in the built-in Line Presenter system, to make it easier to customise. This is useful for when you want to take full control over how the line appears over time, and for when you want to have in-game events occur (like sound effects) as the line appears.
+
+To create a custom typewriter, create a class that implements [`IAsyncTypewriter`](https://docs.yarnspinner.dev/3.1/api/csharp/yarn.unity/yarn.unity.iasynctypewriter). You can find an example of how to write a custom typewriter in the source code for the [`LetterTypewriter`](https://github.com/YarnSpinnerTool/YarnSpinner-Unity/blob/main/Runtime/Views/Typewriter/LetterTypewriter.cs) class.
+
+> [!NOTE]
+> As part of this change, the On Character Typed event on Line Presenter has been removed. If you want to run code every time a character appears, create a new script that subclasses from [ActionMarkupHandler](https://docs.yarnspinner.dev/3.1/api/csharp/yarn.unity/yarn.unity.actionmarkuphandler), and add that to an object in your scene. Add that object to the Line Presenter's "Event Handlers" list. In your ActionMarkupHandler subclass, you can write code that gets called every time characters appear on screen by implementing the [OnCharacterWillAppear method](https://docs.yarnspinner.dev/3.1/api/csharp/yarn.unity/yarn.unity.actionmarkuphandler/yarn.unity.actionmarkuphandler.oncharacterwillappear).
+
+#### Removed Legacy `DialogueView` Classes
+
+Yarn Spinner 3.0 introduced a new programming model for presenting dialogue, called [Dialogue Presenters](https://docs.yarnspinner.dev/3.1/components/dialogue-view). As part of the rollout of this new API, we made the old `DialogueView` class act as a compatibility layer, and marked it as deprecated. Yarn Spinner 3.1 removes this deprecated code. If you have code that started life as a Yarn Spinner 2.0 project, you will need to [migrate your legacy dialogue presentation UI code to use Dialogue Presenters](https://docs.yarnspinner.dev/3.1/changelog/upgrading-from-yarn-spinner-2#dialogueviewbase-is-now-dialoguepresenter) by changing their parent class to `DialoguePresenter`, and implementing the new methods for presenting lines and options
+
+### Added
+
+- `DialogueRunner` will now log warnings if a dialogue presenter throws an `OperationCanceledException` - these usually indicate that a task they were themselves waiting on was cancelled, and that the presenter didn't clean up.
+- The generated `.ysls.json` file now contains more complete command and function information.
+- Added a new attribute for Yarn Spinner editors: `LabelFrom` allows specifying a dynamic label for a property by invoking a method.
+- Added multiple typewriters and support for them on the `LinePresenter`:
+  - By Word
+  - By Letter
+  - Instantly
+- Added a virtual `IAsyncTypewriter` field `Typewriter` onto `DialoguePresenterBase`
+- Added new virtual `OnNodeEnter` and `OnNodeExit` calls onto `DialoguePresenterBase`.
+- Added a static `FindRunner` call onto `DialogueRunner`, which first tries to find it on the game object itself, followed by anywhere in the scene.
+- Added a `Source` field to the `LocalizedLine`, this can be of any type but by default will be the `DialogueRunner` that caused the line to be created
+- Options can now be hurried up, the same as lines
+  - added `RunOptionsAsync(DialogueOption[], LineCancellationToken)` to `DialoguePresenterBase`.
+    - this method is virtual and is now the recommended way to respond to options
+    - the default implementation just returns nothing selected
+  - added `NextContentToken` to `LineCancellationToken` which mirrors the existing `NextLineToken`.
+  - added `IsNextContentRequested` to `LineCancellationToken` which mirrors the existing `IsNextLineRequested` bool.
+  - added `RequestHurryUpOption` to `DialogueRunner`.
+  - added hurry up option inputs to `LineAdvancer`
+- `LineAdvancer` now better handles situations where you want to use the same input for hurrying up and skipping lines.
+  - This behaviour is controllable via the `separateHurryUpAndAdvanceControls` field
+- Added a new container type `InterfaceContainer`, a wrapper class to clean up some interface serialisation pains
+
 ### Changed
 
 - Fixed a compiler error that occurred when the Unity Input System was enabled, but not actually installed.
 - Fixed an error where calls to `DialogueRunner.AddFunction()` in methods that are in nested classes would cause the function to be registered multiple times, leading to compiler failures.
+- Fixed a bug where versions of Unity prior to Unity 2022.3.33 had compilation errors around packages.
+- Fixed a bug where some inspector property fields weren't bound preventing configuring Unity localisation or addressables in Unity 2022.3.
+- Added more specificity to the `Analyser` class's use of the C# code generation API.
+- `AddLineTagsToFilesInYarnProject` is now `public`, allowing for easier use of it in editor scripting.
+- Showing character name behaviour in the `LinePresenter` now correctly matches the documentation.
+- `DialogueRunner.StartDialogue` is now asynchronous and waits for all presenters to finish their `OnDialogueStartedAsync` calls before exiting
+- `DialogueRunner.Stop` is now asynchronous and waits for all presenters to finish their `OnDialogueCompleteAsync` calls before exiting
+- Fixed a bug where the continue button on the `LinePresenter` could become non interactive.
+- `PaletteMarkerProcessor` and `StyleMarkerProcessor` now look less aggressively for their Dialogue Runner.
+- `LocalizedLine.TextWithoutCharacterName` still does not contain the text of the character, but does contain the Markup attribute of the character.
+  - This allows other parts of your dialogue UI that might need to know who said a line still use the `TextWithoutCharacterName` property.
+- `ReplacementMarkuphandler` now returns a `ReplacementMarkerResult` instead of a list of diagnostics.
+  - This is to match the behaviour change in core to fix a markup offset bug
+- `OptionsPresenter` now returns null if there are no options that can be selected due to their availability.
+- If there are no available options, Dialogue Runner will now fallthrough to the next piece of content
+  - This behaviour can be disabled in the `allowOptionFallthrough` field on the runner.
+- Fixed an issue where Builtin localisation would always use the base localisation when fetching a localised asset ([#344](https://github.com/YarnSpinnerTool/YarnSpinner-Unity/issues/344))
+- The UPM samples installer now installs from a specific tag, rather than the head of the repo.
+- Options can now be hurried up, the same as lines. This necessitated several obsolences:
+  - `RunOptionsAsync(DialogueOption[], CancellationToken)` is now obsolete.
+  - `IsNextLineRequested` is now obsolete.
+  - `NextLineToken` is now obsolete.
+- `RunOptionsAsync(DialogueOption[], CancellationToken)` is now virtual.
+  - the default implementation selects nothing and instantly returns.
+- The Dialogue Presenter template file now has the newer form of `RunOptionsAsync`.
+- Built in presenters now use the newer form of `RunOptionsAsync`.
+- The `InputSystemAvailability` static class has been made public.
+- `LineAdvancer` will now ignore the signal to 'hurry up' if it comes in the same frame as line was requested to be shown.
+  - This fixes a bug where the same key was used to start conversation as well hurry up dialogue.
+- Fixed an issue on `EnsureInputModuleAvailable` where, if there was an input system in the scene but it was of the wrong type, the console would fill up with errors.
+- `DialogueRunner` now waits one frame before starting dialogue when automatically start dialogue is turned on.
 
 ### Removed
+
+- Removed `ActionMarkupHandlers` list from `DialoguePresenterBase`. This was only used by the default line presenter, and is now handled by the typewriter system. This which is more representative of what Action Markup Handling already entailed.
+- Removed the legacy Dialogue Views, Typewriter, and Effects.
+- Removed the `ReplacementMarkupHandler.NoDiagnostics` static property, as this no longer matches any need due to core changes around replacement markup.
+- Removed `RunOptionsAsync(DialogueOption[], CancellationToken)` from `LinePresenter`. This method is now virtual, and the default implementation does what we needed here.
 
 ## [3.0.3] 2025-06-21
 

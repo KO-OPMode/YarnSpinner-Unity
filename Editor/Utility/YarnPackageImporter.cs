@@ -32,7 +32,7 @@ namespace Yarn.Unity.Editor
         private const string yarnSpinnerPackageName = "dev.yarnspinner.unity";
         private const string samplesPackageName = "dev.yarnspinner.unity.samples";
 
-        private enum InstallApproach
+        public enum InstallApproach
         {
             Itch, AssetStore, Manual
         }
@@ -53,7 +53,8 @@ namespace Yarn.Unity.Editor
                 // only UPM can really do anything. so in that case we bounce
                 // out to it, and for all others they are not installed later on
                 // this will ideally change
-                switch (installApproach)
+#pragma warning disable 162
+                switch (InstallationApproach)
                 {
                     case InstallApproach.Manual:
                         {
@@ -61,6 +62,7 @@ namespace Yarn.Unity.Editor
                         }
                 }
                 return SamplesPackageStatus.NotInstalled;
+#pragma warning restore
             }
         }
 
@@ -68,7 +70,8 @@ namespace Yarn.Unity.Editor
         [UnityEditor.MenuItem("Window/Yarn Spinner/Install Samples Package", false)]
         internal static void InstallSamples()
         {
-            switch (installApproach)
+#pragma warning disable 162
+            switch (InstallationApproach)
             {
                 // there are two variants here
                 case InstallApproach.Manual:
@@ -99,6 +102,7 @@ namespace Yarn.Unity.Editor
                         break;
                     }
             }
+#pragma warning restore
         }
 
         // open the samples up if they are installed
@@ -110,10 +114,33 @@ namespace Yarn.Unity.Editor
             }
         }
 
+#if UNITY_2022_3_33_OR_NEWER
         static PackageInfo? GetInstalledPackageInfo(string packageName)
         {
             return PackageInfo.FindForPackageName(packageName);
         }
+#else
+        // prior to 2022.3.33f1 they didn't have a good way to get a specific selected package
+        // so instead what we do is run through every installed package and see if it has the same name
+        // if it does we return that
+        // otherwise we return null.
+        // In my testing this hasn't caused any issues but I am sure there are gaps I have missed
+        // which I think is an acceptable tradeoff considering the age of <.33
+        // and the failure state is that instead of opening the samples we open the docs
+        // which feels ok to me as a fallback.
+        static PackageInfo? GetInstalledPackageInfo(string packageName)
+        {
+            var allPackages = PackageInfo.GetAllRegisteredPackages();
+            foreach (var package in allPackages)
+            {
+                if (package.name.ToLower() == packageName.ToLower())
+                {
+                    return package;
+                }
+            }
+            return null;
+        }
+#endif
 
         static IEnumerable<Sample> GetSamplesForInstalledPackage(PackageInfo package)
         {

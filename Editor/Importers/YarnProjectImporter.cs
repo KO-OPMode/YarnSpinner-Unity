@@ -27,7 +27,7 @@ namespace Yarn.Unity.Editor
     /// Imports a .yarnproject file and produces a <see cref="YarnProject"/>
     /// asset.
     /// </summary>
-    [ScriptedImporter(6, new[] { "yarnproject" }, 1000), HelpURL("https://docs.yarnspinner.dev/using-yarnspinner-with-unity/importing-yarn-files/yarn-projects")]
+    [ScriptedImporter(7, new[] { "yarnproject" }, 1000), HelpURL("https://docs.yarnspinner.dev/using-yarnspinner-with-unity/importing-yarn-files/yarn-projects")]
     [InitializeOnLoad]
     public class YarnProjectImporter : ScriptedImporter
     {
@@ -623,15 +623,20 @@ namespace Yarn.Unity.Editor
 
                 if (generateVariablesSourceFile)
                 {
-
-                    var fileName = variablesClassName + ".cs";
-
-                    var generatedSourcePath = Path.Combine(Path.GetDirectoryName(ctx.assetPath), fileName);
-                    bool generated = GenerateVariableSource(generatedSourcePath, project, compilationResult);
-                    if (generated)
+                    // Generate the variable source; if it's different to what's
+                    // on disk, import it.
+                    var assetPath = ctx.assetPath;
+                    EditorApplication.delayCall += () =>
                     {
-                        AssetDatabase.ImportAsset(generatedSourcePath);
-                    }
+                        var fileName = variablesClassName + ".cs";
+
+                        var generatedSourcePath = Path.Combine(Path.GetDirectoryName(assetPath), fileName);
+                        bool generated = GenerateVariableSource(generatedSourcePath, project, compilationResult);
+                        if (generated)
+                        {
+                            AssetDatabase.ImportAsset(generatedSourcePath);
+                        }
+                    };
                 }
             }
 
@@ -1112,15 +1117,37 @@ namespace Yarn.Unity.Editor
                     foreach (var (id, asset) in assetPaths)
                     {
                         newLocalization.AddLocalizedObjectToAsset(id, asset);
-#if USE_ADDRESSABLES
-                        if (newLocalization.UsesAddressableAssets)
-                        {
-                            // If we're using addressable assets, make sure that
-                            // the asset we just added has an address
-                            LocalizationEditor.EnsureAssetIsAddressable(asset, Localization.GetAddressForLine(id, localisationInfo.languageID));
-                        }
-#endif
                     }
+
+#if USE_ADDRESSABLES
+                    // If we're using addressable assets, make sure that the
+                    // assets we just added have an address. Do this after the
+                    // import completes, because we're not allowed to modify the
+                    // addressable asset settings in the middle of an import.
+                    if (newLocalization.UsesAddressableAssets)
+                    {
+                        EditorApplication.delayCall += () =>
+                        {
+                            var assetCount = assetPaths.Count();
+                            int count = 0;
+
+                            foreach (var (id, asset) in assetPaths)
+                            {
+                                // Updating asset addresses can take time, so
+                                // show a progress bar that the user can cancel.
+                                var cancelled = EditorUtility.DisplayCancelableProgressBar("Updating Dialogue Asset Addresses", asset.name, count / (float)assetCount);
+                                if (cancelled)
+                                {
+                                    Debug.LogWarning("Cancelled updating dialogue asset paths.");
+                                    break;
+                                }
+                                LocalizationEditor.EnsureAssetIsAddressable(asset, Localization.GetAddressForLine(id, localisationInfo.languageID));
+                                count += 1;
+                            }
+                            EditorUtility.ClearProgressBar();
+                        };
+                    }
+#endif
 
 #if YARNSPINNER_DEBUG
                     stopwatch.Stop();
@@ -1284,6 +1311,44 @@ namespace Yarn.Unity.Editor
                 }
             }
 
+            if (YarnSpinnerProjectSettings.GetOrCreateSettings().sortLocalisationValuesInsideStringTable)
+            {
+                // sorting the table based on file and line number
+                Dictionary<string, string> sortKeys = new();
+                foreach (var pair in stringTable)
+                {
+                    sortKeys[pair.Key] = $"{pair.Value.fileName.ToLower()}-{string.Format("{0:D6}", pair.Value.lineNumber)}";
+                }
+
+                HashSet<string> invalidKeys = new();
+                unityStringTable.SharedData.Entries.Sort((a,b) =>
+                {
+                    // if we encounter a key that doesn't match a value we got from the string table we want to log this and push it to one end
+                    if (sortKeys.TryGetValue(unityStringTable.GetEntry(a.Id).Key, out var aKey))
+                    {
+                        if (sortKeys.TryGetValue(unityStringTable.GetEntry(b.Id).Key, out var bKey))
+                        {
+                            return aKey.CompareTo(bKey);
+                        }
+                        else
+                        {
+                            invalidKeys.Add(unityStringTable.GetEntry(b.Id).Key);
+                            return 1;
+                        }
+                    }
+                    else
+                    {
+                        invalidKeys.Add(unityStringTable.GetEntry(a.Id).Key);
+                        return -1;
+                    }
+                });
+                // now that the table is sorted we want to log any invalid entries we might have found
+                foreach (var key in invalidKeys)
+                {
+                    Debug.LogWarning($"Encountered an ID in the Yarn string table \"{key}\" during import that didn't come from the Yarn Project.");
+                }
+            }
+
             // We've made changes to the table, so flag it and its shared data
             // as dirty.
             EditorUtility.SetDirty(unityStringTable);
@@ -1408,7 +1473,7 @@ namespace Yarn.Unity.Editor
         {
             CompilationJob compilationJob = GetCompilationJob();
 
-            if (compilationJob.Files.Any() == false)
+            if (compilationJob.Inputs.Any() == false)
             {
                 // We have no scripts to work with. In this case, return an
                 // empty collection - there's no error, but there's no content

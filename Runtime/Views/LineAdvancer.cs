@@ -2,23 +2,24 @@
 Yarn Spinner is licensed to you under the terms found in the file LICENSE.md.
 */
 
+using System.Collections.Generic;
 using System.Threading;
 using UnityEngine;
 using Yarn.Markup;
 using Yarn.Unity.Attributes;
-using System.Collections.Generic;
 
 #if USE_TMP
 using TMPro;
 #else
 using TextMeshProUGUI = Yarn.Unity.TMPShim;
+using TMP_Text = Yarn.Unity.TMPShim;
 #endif
 
 #nullable enable
 
 namespace Yarn.Unity
 {
-    internal static class InputSystemAvailability
+    public static class InputSystemAvailability
     {
 #if USE_INPUTSYSTEM
         internal const bool inputSystemInstalled = true;
@@ -79,17 +80,17 @@ namespace Yarn.Unity
         /// <param name="key">The <see cref="KeyCode"/> to check for the state
         /// of.</param>
         /// <returns>Whether the key was pressed this frame.</returns>
-        internal static bool GetKeyDown(KeyCode key)
+        public static bool GetKeyDown(KeyCode key)
         {
-#if  ENABLE_LEGACY_INPUT_MANAGER
-            // If we're using Legacy Input, read from it directly
-            return Input.GetKeyDown(key);
-#else
             if (key == KeyCode.None)
             {
                 // The 'none' key is never pressed
                 return false;
             }
+#if  ENABLE_LEGACY_INPUT_MANAGER
+            // If we're using Legacy Input, read from it directly
+            return Input.GetKeyDown(key);
+#else
 
             if (lookup.Value.TryGetValue(key, out var lookupKey))
             {
@@ -115,6 +116,32 @@ namespace Yarn.Unity
             }
 #endif
         }
+
+        public static bool GetButtonDown(string? buttonName)
+        {
+            if (buttonName == null)
+            {
+                return false;
+            }
+#if  ENABLE_LEGACY_INPUT_MANAGER
+            return Input.GetButtonUp(buttonName);
+#else
+            return false;
+#endif
+        }
+
+        public static float GetAxis(string? axisName)
+        {
+            if (axisName == null)
+            {
+                return 0;
+            }
+#if  ENABLE_LEGACY_INPUT_MANAGER
+            return Input.GetAxis(axisName);
+#else
+            return 0;
+#endif
+        }
     }
 
     /// <summary>
@@ -130,16 +157,21 @@ namespace Yarn.Unity
         [SerializeField] DialogueRunner? runner;
 
         /// <summary>
-        /// The <see cref="DialoguePresenterBase"/> that this LineAdvancer
-        /// should subscribe to for notifications that the line is fully
-        /// visible.
+        /// The <see cref="DialoguePresenterBase"/> that this LineAdvancer should subscribe to for notifications that the line is fully visible.
         /// </summary>
-        /// <remarks>When <see cref="RequestLineHurryUp"/> is called, if the
-        /// line is fully visible, the <see cref="runner"/> object will have its
-        /// <see cref="DialogueRunner.RequestNextLine"/> method called (instead
-        /// of its <see cref="DialogueRunner.RequestHurryUpLine"/> method).
+        /// <remarks>When <see cref="RequestLineHurryUp"/> is called, if the line is fully visible, the <see cref="runner"/> object will have its <see cref="DialogueRunner.RequestNextLine"/> method called (instead of its <see cref="DialogueRunner.RequestHurryUpLine"/> method).
+        /// This behaviour is only the case when the <see cref="separateHurryUpAndAdvanceControls"/> is set to false.
         ///</remarks>
         [SerializeField] DialoguePresenterBase? presenter;
+
+        /// <summary>
+        /// Should this line advancer use different actions for hurrying up a line and advancing a line?
+        /// </summary>
+        /// <remarks>
+        /// When this is false if the player requests a line to hurry up and the line is fully shown the <see cref="DialogueRunner.RequestNextLine"/> method will be called instead of the <see cref="DialogueRunner.RequestHurryUpLine"/> method.
+        /// This behaviour is only the case when <see cref="presenter"/> is not null and the presenter is presenting it's line content via it's <see cref="DialoguePresenter.Typewriter"/> property.
+        /// </remarks>
+        [SerializeField] private bool separateHurryUpAndAdvanceControls = false;
 
         /// <summary>
         /// If <see langword="true"/>, repeatedly signalling that the line
@@ -215,6 +247,12 @@ namespace Yarn.Unity
         [MessageBox(sourceMethod: nameof(ValidateInputMode))]
         [SerializeField] InputMode inputMode;
 
+        // when using the same input for different actions, for example using spacebar to select an option but also spacebar to hurry up lines
+        // the action for hurrying up the line will happen the same frame as the action for selection
+        // so if a line follows options (very common), that line might well get told to instantly hurry up
+        // which isn't ideal, so this tracks the frame that content arrives and hurry up events cannot run the same frame as their content appears
+        private int frameContentReceived = 0;
+
         InputMode UsedInputMode
         {
             get
@@ -246,6 +284,7 @@ namespace Yarn.Unity
                 return MessageBoxAttribute.Info($"To use this component, call the following methods on it:\n\n" +
                     $"- {nameof(this.RequestLineHurryUp)}()\n" +
                     $"- {nameof(this.RequestNextLine)}()\n" +
+                    $"- {nameof(this.RequestOptionHurryUp)}()\n" +
                     $"- {nameof(this.RequestDialogueCancellation)}()"
                 );
             }
@@ -285,8 +324,16 @@ namespace Yarn.Unity
         /// line.
         /// </summary>
         [ShowIf(nameof(UsedInputMode), InputMode.InputActions)]
+        [ShowIf(nameof(separateHurryUpAndAdvanceControls))]
         [Indent]
         [SerializeField] UnityEngine.InputSystem.InputActionReference? nextLineAction;
+
+        /// <summary>
+        /// The Input Action that triggers an instruction to hurry up presenting the current options
+        /// </summary>
+        [ShowIf(nameof(UsedInputMode), InputMode.InputActions)]
+        [Indent]
+        [SerializeField] UnityEngine.InputSystem.InputActionReference? hurryUpOptionsAction;
 
         /// <summary>
         /// The Input Action that triggers an instruction to cancel the entire
@@ -314,13 +361,23 @@ namespace Yarn.Unity
         [ShowIf(nameof(UsedInputMode), InputMode.LegacyInputAxes)]
         [Indent]
         [SerializeField] string? hurryUpLineAxis = "Jump";
+
         /// <summary>
         /// The legacy Input Axis that triggers an instruction to cancel the
         /// current line.
         /// </summary>
         [ShowIf(nameof(UsedInputMode), InputMode.LegacyInputAxes)]
+        [ShowIf(nameof(separateHurryUpAndAdvanceControls))]
         [Indent]
         [SerializeField] string? nextLineAxis = "Cancel";
+
+        /// <summary>
+        /// The legacy Input Axis that triggers an instruction to hurry up presenting the current options
+        /// </summary>
+        [ShowIf(nameof(UsedInputMode), InputMode.LegacyInputAxes)]
+        [Indent]
+        [SerializeField] string? hurryUpOptionsAxis = "Jump";
+
         /// <summary>
         /// The legacy Input Axis that triggers an instruction to cancel the
         /// entire dialogue.
@@ -342,8 +399,16 @@ namespace Yarn.Unity
         /// current line.
         /// </summary>
         [ShowIf(nameof(UsedInputMode), InputMode.KeyCodes)]
+        [ShowIf(nameof(separateHurryUpAndAdvanceControls))]
         [Indent]
         [SerializeField] KeyCode nextLineKeyCode = KeyCode.Escape;
+
+        /// <summary>
+        /// The <see cref="KeyCode"/> that triggers an instruction to hurry up presenting options
+        /// </summary>
+        [ShowIf(nameof(UsedInputMode), InputMode.KeyCodes)]
+        [Indent]
+        [SerializeField] KeyCode hurryUpOptionsKeyCode = KeyCode.Space;
 
         /// <summary>
         /// The <see cref="KeyCode"/> that triggers an instruction to cancel the
@@ -356,8 +421,13 @@ namespace Yarn.Unity
 #if USE_INPUTSYSTEM
         private void OnHurryUpLinePerformed(UnityEngine.InputSystem.InputAction.CallbackContext ctx)
         {
-            RequestLineHurryUp();
+            RequestLineHurryUpInternal();
         }
+        private void OnHurryUpOptionsPerformed(UnityEngine.InputSystem.InputAction.CallbackContext ctx)
+        {
+            RequestOptionHurryUp();
+        }
+
         private void OnNextLinePerformed(UnityEngine.InputSystem.InputAction.CallbackContext ctx)
         {
             RequestNextLine();
@@ -367,30 +437,46 @@ namespace Yarn.Unity
             RequestDialogueCancellation();
         }
 #endif
-        // used to track the status of the line
+        // used to track the status of the presentation
         // you can think of this as a variation on multiple presses to advance a line
-        // where if the default line presenter is awaiting input it is reasonable that pressing hurry up would advance
-        // but the line presenter can't really tell that apart
+        // where if the presenter is awaiting input it is reasonable that pressing hurry up would advance to the next piece of content
+        // but the default presenters can't really tell that apart
         // so the line advancer instead will handle this
-        // this will only work if for the default line presenter but that is ok as that is the default
-        // as people replace those defaults with more complex views and presenters they will also have to replace the line advancer
-        // or make their presenters also fire off action markup events which is the better approach IMO
-        private enum LineStatus
+        // this only works if the line advancer is added as a processor onto the presenters typewriter
+        // but that is ok as that is the default
+        // as people replace those defaults with more complex views and presenters they will also want to replace the line advancer anyways
+        private enum PresentationStatus
         {
-            Unknown, Began, Waiting
+            Unknown, LineBegan, LineWaiting, OptionsBegan, OptionsWaiting,
         }
-        private LineStatus status = LineStatus.Unknown;
+        private PresentationStatus status = PresentationStatus.Unknown;
 
-        void Start()
+        private void Start()
         {
             // If we have a dialogue presenter configured, register ourselves as
             // a temporal processor, so that we get notified when the line is
             // fully visible. This is so that when a line is fully visible, the
             // 'hurry up' action will instead trigger a 'next line' action,
             // (because there's nothing left to hurry up.)
-            if (presenter != null)
+            if (runner == null || presenter == null)
             {
-                presenter.ActionMarkupHandlers.Add(this);
+                return;
+            }
+            if (!separateHurryUpAndAdvanceControls)
+            {
+                var listOfPresenters = new List<DialoguePresenterBase?>(runner.DialoguePresenters)
+                {
+                    this
+                };
+                runner.DialoguePresenters = listOfPresenters;
+                presenter.Typewriter?.ActionMarkupHandlers.Add(this);
+
+                // last thing is to null out the inputs just in case
+                nextLineAxis = null;
+                nextLineKeyCode = KeyCode.None;
+#if USE_INPUTSYSTEM
+                nextLineAction = null;
+#endif
             }
         }
 
@@ -402,11 +488,20 @@ namespace Yarn.Unity
         public override YarnTask OnDialogueStartedAsync()
         {
 #if USE_INPUTSYSTEM
+            if (enableActions)
+            {
+                if (hurryUpLineAction != null) { hurryUpLineAction.action.Enable(); }
+                if (hurryUpOptionsAction != null) { hurryUpOptionsAction.action.Enable(); }
+                if (nextLineAction != null) { nextLineAction.action.Enable(); }
+                if (cancelDialogueAction != null) { cancelDialogueAction.action.Enable(); }
+            }
+
             if (UsedInputMode == InputMode.InputActions)
             {
                 // If we're using the input system, register callbacks to run
                 // when our actions are performed.
                 if (hurryUpLineAction != null) { hurryUpLineAction.action.performed += OnHurryUpLinePerformed; }
+                if (hurryUpOptionsAction != null) { hurryUpOptionsAction.action.performed += OnHurryUpOptionsPerformed; }
                 if (nextLineAction != null) { nextLineAction.action.performed += OnNextLinePerformed; }
                 if (cancelDialogueAction != null) { cancelDialogueAction.action.performed += OnCancelDialoguePerformed; }
             }
@@ -428,6 +523,7 @@ namespace Yarn.Unity
             if (UsedInputMode == InputMode.InputActions)
             {
                 if (hurryUpLineAction != null) { hurryUpLineAction.action.performed -= OnHurryUpLinePerformed; }
+                if (hurryUpOptionsAction != null) { hurryUpOptionsAction.action.performed -= OnHurryUpOptionsPerformed; }
                 if (nextLineAction != null) { nextLineAction.action.performed -= OnNextLinePerformed; }
                 if (cancelDialogueAction != null) { cancelDialogueAction.action.performed -= OnCancelDialoguePerformed; }
             }
@@ -447,16 +543,9 @@ namespace Yarn.Unity
             // A new line has come in, so reset the number of times we've seen a
             // request to skip.
             ResetLineTracking();
-            status = LineStatus.Began;
+            status = PresentationStatus.LineBegan;
 
-#if USE_INPUTSYSTEM
-            if (enableActions)
-            {
-                if (hurryUpLineAction != null) { hurryUpLineAction.action.Enable(); }
-                if (nextLineAction != null) { nextLineAction.action.Enable(); }
-                if (cancelDialogueAction != null) { cancelDialogueAction.action.Enable(); }
-            }
-#endif
+            frameContentReceived = Time.frameCount;
 
             return YarnTask.CompletedTask;
         }
@@ -467,20 +556,85 @@ namespace Yarn.Unity
         /// <inheritdoc cref="LinePresenter.RunOptionsAsync" path="/param"/>
         /// <returns>A completed task indicating that no option was selected by
         /// this view.</returns>
-        public override YarnTask<DialogueOption?> RunOptionsAsync(DialogueOption[] dialogueOptions, CancellationToken cancellationToken)
+        public override YarnTask<DialogueOption?> RunOptionsAsync(DialogueOption[] dialogueOptions, LineCancellationToken cancellationToken)
         {
-            // This line view doesn't take any actions when options are
-            // presented.
             ResetLineTracking();
-            return YarnTask<DialogueOption?>.FromResult(null);
+            status = PresentationStatus.OptionsBegan;
+
+            frameContentReceived = Time.frameCount;
+
+            return DialogueRunner.NoOptionSelected;
         }
 
         private void ResetLineTracking()
         {
             numberOfAdvancesThisLine = 0;
-            status = LineStatus.Unknown;
+            status = PresentationStatus.Unknown;
         }
 
+
+        private void RequestLineHurryUpInternal()
+        {
+            if (frameContentReceived == Time.frameCount)
+            {
+                return;
+            }
+
+            // in this mode we NEED to be in a state where a line showing, regardless of it's completion state
+            if (!separateHurryUpAndAdvanceControls)
+            {
+                if (!(status == PresentationStatus.LineBegan || status == PresentationStatus.LineWaiting))
+                {
+                    return;
+                }
+            }
+
+            // Increment our counter of line advancements, and depending on the
+            // new count, request that the runner 'soft-cancel' the line or
+            // cancel the entire line
+            // this is true regardless of if we are the hurry up mode or not
+
+            numberOfAdvancesThisLine += 1;
+
+            if (multiAdvanceIsCancel && numberOfAdvancesThisLine >= advanceRequestsBeforeCancellingLine)
+            {
+                RequestNextLine();
+            }
+            else
+            {
+                // at this stage we want to hurry up if we are in multiAdvanceIsCancel
+                // and either hurry up or skip the line depending on the state 
+                if (separateHurryUpAndAdvanceControls)
+                {
+                    if (runner != null)
+                    {
+                        runner.RequestHurryUpLine();
+                    }
+                    else
+                    {
+                        Debug.LogError($"{nameof(LineAdvancer)} dialogue runner is null", this);
+                    }
+                }
+                else
+                {
+                    if (status == PresentationStatus.LineWaiting)
+                    {
+                        RequestNextLine();
+                    }
+                    else
+                    {
+                        if (runner != null)
+                        {
+                            runner.RequestHurryUpLine();
+                        }
+                        else
+                        {
+                            Debug.LogError($"{nameof(LineAdvancer)} dialogue runner is null", this);
+                        }
+                    }
+                }
+            }
+        }
         /// <summary>
         /// Requests that the line be hurried up.
         /// </summary>
@@ -506,22 +660,38 @@ namespace Yarn.Unity
             {
                 if (runner != null)
                 {
-                    // if we are in a waiting status and the hurry up is pressed we move to the next line
-                    // can think of this as a variant of tapping the hurry up action the same number of times as advanceRequestsBeforeCancellingLine
-                    if (status == LineStatus.Waiting)
-                    {
-                        runner.RequestNextLine();
-                    }
-                    else
-                    {
-                        runner.RequestHurryUpLine();
-                    }
-
+                    runner.RequestHurryUpLine();
                 }
                 else
                 {
                     Debug.LogError($"{nameof(LineAdvancer)} dialogue runner is null", this);
                 }
+            }
+        }
+
+        public void RequestOptionHurryUp()
+        {
+            if (frameContentReceived == Time.frameCount)
+            {
+                return;
+            }
+
+            if (runner == null)
+            {
+                Debug.LogError($"Unable to hurry up options, {nameof(LineAdvancer)} dialogue runner is null", this);
+                return;
+            }
+
+            if (!separateHurryUpAndAdvanceControls)
+            {
+                 if (status == PresentationStatus.OptionsBegan || status == PresentationStatus.OptionsWaiting)
+                {
+                    runner.RequestHurryUpOption();
+                }
+            }
+            else
+            {
+                runner.RequestHurryUpOption();
             }
         }
 
@@ -552,7 +722,7 @@ namespace Yarn.Unity
             // well as the entire dialogue.
             if (runner != null)
             {
-                runner.Stop();
+                runner.Stop().Forget();
             }
         }
 
@@ -566,14 +736,16 @@ namespace Yarn.Unity
             switch (UsedInputMode)
             {
                 case InputMode.KeyCodes:
-                    if (InputSystemAvailability.GetKeyDown(hurryUpLineKeyCode)) { this.RequestLineHurryUp(); }
+                    if (InputSystemAvailability.GetKeyDown(hurryUpLineKeyCode)) { this.RequestLineHurryUpInternal(); }
+                    if (InputSystemAvailability.GetKeyDown(hurryUpOptionsKeyCode)) { this.RequestOptionHurryUp(); }
                     if (InputSystemAvailability.GetKeyDown(nextLineKeyCode)) { this.RequestNextLine(); }
                     if (InputSystemAvailability.GetKeyDown(cancelDialogueKeyCode)) { this.RequestDialogueCancellation(); }
                     break;
                 case InputMode.LegacyInputAxes:
-                    if (string.IsNullOrEmpty(hurryUpLineAxis) == false && Input.GetButtonDown(hurryUpLineAxis)) { this.RequestLineHurryUp(); }
-                    if (string.IsNullOrEmpty(nextLineAxis) == false && Input.GetButtonDown(nextLineAxis)) { this.RequestNextLine(); }
-                    if (string.IsNullOrEmpty(cancelDialogueAxis) == false && Input.GetButtonDown(cancelDialogueAxis)) { this.RequestDialogueCancellation(); }
+                    if (InputSystemAvailability.GetButtonDown(hurryUpLineAxis)) { this.RequestLineHurryUpInternal(); }
+                    if (InputSystemAvailability.GetButtonDown(hurryUpOptionsAxis)) { this.RequestOptionHurryUp(); }
+                    if (InputSystemAvailability.GetButtonDown(nextLineAxis)) { this.RequestNextLine(); }
+                    if (InputSystemAvailability.GetButtonDown(cancelDialogueAxis)) { this.RequestDialogueCancellation(); }
                     break;
                 default:
                     // Nothing to do; 'None' takes no action, and 'InputActions'
@@ -599,12 +771,19 @@ namespace Yarn.Unity
 
         public void OnLineDisplayComplete()
         {
-            status = LineStatus.Waiting;
+            if (status == PresentationStatus.LineBegan)
+            {
+                status = PresentationStatus.LineWaiting;
+            }
+            else if (status == PresentationStatus.OptionsBegan)
+            {
+                status = PresentationStatus.OptionsWaiting;
+            }
         }
 
         public void OnLineWillDismiss()
         {
-            ResetLineTracking();
+            return;
         }
     }
 }
