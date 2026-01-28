@@ -22,6 +22,9 @@ namespace Yarn.Unity.UnityLocalization
     /// <summary>
     /// Contains Yarn Spinner related metadata for Unity string table entries.
     /// </summary>
+    // KO_OP custom start
+    [System.Serializable]
+    // KO_OP custom end
     public class LineMetadata : IMetadata
     {
         /// <summary>
