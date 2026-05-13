@@ -1,5 +1,5 @@
 {
-    "name": "YarnSpinnerTests",
+    "name": "YarnSpinner.Unity.Tests",
     "rootNamespace": "",
     "references": [
         "YarnSpinner.Unity",
@@ -7,7 +7,7 @@
         "UnityEditor.TestRunner",
         "Unity.TextMeshPro",
         "YarnSpinner.Unity.Editor",
-        "YarnSpinnerTests.Shared",
+        "YarnSpinner.Unity.Tests.Shared",
         "UniTask"
     ],
     "includePlatforms": [],

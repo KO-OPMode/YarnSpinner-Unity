@@ -222,7 +222,8 @@ namespace Yarn.Unity
                             arg = args[i];
                             if (converter == null)
                             {
-                                paramsArray.SetValue(arg, i);
+                                // Use relative index into paramsArray
+                                paramsArray.SetValue(arg, i - paramIndex);
                             }
                             else
                             {

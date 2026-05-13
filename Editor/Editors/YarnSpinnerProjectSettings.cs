@@ -24,9 +24,14 @@ namespace Yarn.Unity.Editor
         public static string YarnSpinnerProjectSettingsPath => Path.Combine("ProjectSettings", "Packages", "dev.yarnspinner", "YarnSpinnerProjectSettings.json");
         public static string YarnSpinnerGeneratedYSLSPath => Path.Combine("ProjectSettings", "Packages", "dev.yarnspinner", "generated.ysls.json");
 
+        public static string YarnSpinnerAssemblyGeneratedYSLSPath(string assemblyName)
+        {
+            return Path.Combine("ProjectSettings", "Packages", "dev.yarnspinner", $"{assemblyName}-generated.ysls.json");
+        }
+
         public bool autoRefreshLocalisedAssets = true;
         public bool automaticallyLinkAttributedYarnCommandsAndFunctions = true;
-        public bool generateYSLSFile = false;
+        public bool generateYSLSFile = true;
         public bool enableDirectLinkToVSCode = false;
         public (int major, int minor) Version
         {
@@ -80,7 +85,7 @@ namespace Yarn.Unity.Editor
 
             settings.autoRefreshLocalisedAssets = true;
             settings.automaticallyLinkAttributedYarnCommandsAndFunctions = true;
-            settings.generateYSLSFile = false;
+            settings.generateYSLSFile = true;
             settings.majorVersion = 0;
             settings.minorVersion = 0;
             settings.sortLocalisationValuesInsideStringTable = false;
@@ -119,7 +124,7 @@ namespace Yarn.Unity.Editor
 
                 bool automaticallyLinkAttributedYarnCommandsAndFunctions = GetValueOrDefault(automaticallyLinkAttributedYarnCommandsAndFunctionsKey, true);
                 bool autoRefreshLocalisedAssets = GetValueOrDefault(autoRefreshLocalisedAssetsKey, true);
-                bool generateYSLSFile = GetValueOrDefault(generateYSLSFileKey, false);
+                bool generateYSLSFile = GetValueOrDefault(generateYSLSFileKey, true);
                 bool enableDirectLinkToVSCode = GetValueOrDefault(enableDirectLinkToVSCodeKey, false);
                 int major = GetValueOrDefault(majorVersionKey, 0);
                 int minor = GetValueOrDefault(minorVersionKey, 0);
@@ -156,6 +161,7 @@ namespace Yarn.Unity.Editor
             dictForm[autoRefreshLocalisedAssetsKey] = this.autoRefreshLocalisedAssets;
             dictForm[generateYSLSFileKey] = this.generateYSLSFile;
             dictForm[enableDirectLinkToVSCodeKey] = this.enableDirectLinkToVSCode;
+            dictForm[sortLocalisationValuesInsideStringTableKey] = this.sortLocalisationValuesInsideStringTable;
             dictForm[majorVersionKey] = this.majorVersion;
             dictForm[minorVersionKey] = this.minorVersion;
 

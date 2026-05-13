@@ -16,11 +16,16 @@ namespace Yarn.Unity
         void Write(object obj);
         void WriteLine(object obj);
         void WriteException(System.Exception ex, string? message = null);
+
+        void Inc();
+        void Dec();
+        void SetDepth(int depth);
     }
 
     public class FileLogger : ILogger
     {
         System.IO.TextWriter writer;
+        private int depth = 0;
 
         public FileLogger(System.IO.TextWriter writer)
         {
@@ -35,23 +40,39 @@ namespace Yarn.Unity
 
         public void Write(object text)
         {
-            writer.Write(text);
+            var tabs = new String('\t', depth);
+            writer.Write(tabs + text);
         }
 
         public void WriteLine(object text)
         {
-            writer.WriteLine(text);
+            var tabs = new String('\t', depth);
+            writer.WriteLine(tabs + text);
         }
         public void WriteException(System.Exception ex, string? message)
         {
+            var tabs = new String('\t', depth);
             if (message == null)
             {
-                writer.WriteLine($"Exception: {ex.Message}");
+                writer.WriteLine($"{tabs}Exception: {ex.Message}");
             }
             else
             {
-                writer.WriteLine($"{message}: {ex.Message}");
+                writer.WriteLine($"{tabs}{message}: {ex.Message}");
             }
+        }
+
+        public void Inc()
+        {
+            depth +=1 ;
+        }
+        public void Dec()
+        {
+            depth = Math.Max(depth - 1, 0);
+        }
+        public void SetDepth(int depth)
+        {
+            this.depth = Math.Max(depth, 0);
         }
     }
 
@@ -66,8 +87,9 @@ namespace Yarn.Unity
 
         public void WriteLine(object text)
         {
+            var tabs = new String('\t', depth);
 #if UNITY_EDITOR
-            Debug.LogWarning(text.ToString());
+            Debug.LogWarning(tabs + text.ToString());
 #endif
         }
 
@@ -76,6 +98,20 @@ namespace Yarn.Unity
 #if UNITY_EDITOR
             Debug.LogException(ex);
 #endif
+        }
+
+        private int depth = 0;
+        public void Inc()
+        {
+            depth +=1 ;
+        }
+        public void Dec()
+        {
+            depth = Math.Max(depth - 1, 0);
+        }
+        public void SetDepth(int depth)
+        {
+            this.depth = Math.Max(depth, 0);
         }
     }
 
@@ -88,5 +124,9 @@ namespace Yarn.Unity
         public void WriteLine(object text) { }
 
         public void WriteException(System.Exception ex, string? message = null) { }
+
+        public void Inc(){}
+        public void Dec(){}
+        public void SetDepth(int depth) {}
     }
 }

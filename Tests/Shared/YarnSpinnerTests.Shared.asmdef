@@ -1,5 +1,5 @@
 {
-    "name": "YarnSpinnerTests.Shared",
+    "name": "YarnSpinner.Unity.Tests.Shared",
     "rootNamespace": "",
     "references": [
         "YarnSpinner.Unity",

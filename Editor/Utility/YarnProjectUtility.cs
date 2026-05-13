@@ -15,6 +15,13 @@ using UnityEditor.AddressableAssets;
 using UnityEditor.AddressableAssets.Settings;
 #endif
 
+#if !UNITY_6000_4_OR_NEWER
+// EntityId was introduced in Unity 6.4 to replace integer-based instance IDs.
+// We'll use a type alias so that versions earlier than that can keep working
+// with the older APIs.
+using EntityId = System.Int32;
+#endif
+
 #nullable enable
 
 namespace Yarn.Unity.Editor
@@ -240,36 +247,39 @@ namespace Yarn.Unity.Editor
                 .Where(path => assetType.IsAssignableFrom(AssetDatabase.GetMainAssetTypeAtPath(path)));
 
             // Match files with those whose filenames contain a line ID
-            var matchedFilesAndPaths = lineIDs.GroupJoin(
-                // the elements we're matching lineIDs to
-                allFiles,
-                // the key for lineIDs (being strings, it's just the line ID
-                // itself)
-                lineID => lineID,
-                // the key for assets (the filename without the path)
-                assetPath => Path.GetFileName(assetPath),
-                // the way we produce the result (a key-value pair)
-                (lineID, assetPaths) =>
+            // If a direct file match is found prefer that
+            Dictionary<string, string> assets = new();
+            foreach (var lineID in lineIDs)
+            {
+                var lineIDWithoutPrefix = lineID.Replace("line:", "").ToLowerInvariant();
+                var candidates = new List<string>();
+                foreach (var asset in allFiles)
                 {
-                    if (assetPaths.Count() > 1)
-                    {
-                        Debug.LogWarning($"Line {lineID} has {assetPaths.Count()} possible assets.\n{string.Join(", ", assetPaths)}");
-                    }
-                    return new { lineID, assetPaths };
-                },
-                // the way we test to see if two elements should be joined (does
-                // the filename contain the line ID?)
-                Compare.By<string>((fileName, lineID) =>
-                {
-                    var lineIDWithoutPrefix = lineID.Replace("line:", "");
-                    return Path.GetFileNameWithoutExtension(fileName).Contains(lineIDWithoutPrefix);
-                })
-                )
-                // Discard any pair where no asset was found
-                .Where(pair => pair.assetPaths.Count() > 0)
-                .ToDictionary(entry => entry.lineID, entry => entry.assetPaths.FirstOrDefault());
+                    var file = Path.GetFileNameWithoutExtension(asset).ToLowerInvariant();
 
-            return matchedFilesAndPaths;
+                    if (file == lineIDWithoutPrefix)
+                    {
+                        assets[lineID] = asset;
+                        break;
+                    }
+
+                    if (file.Contains(lineIDWithoutPrefix))
+                    {
+                        candidates.Add(asset);
+                    }
+                }
+
+                var count = candidates.Count();
+                if (count > 0)
+                {
+                    assets[lineID] = candidates.FirstOrDefault();
+                    if (count > 1)
+                    {
+                        Debug.LogWarning($"Discovered {count} candidates for {lineID}. Selecting one.\nCandidates:\n" + string.Join("\n", candidates));
+                    }
+                }
+            }
+            return assets;
         }
 
         /// <summary>
@@ -455,11 +465,11 @@ namespace Yarn.Unity.Editor
             return (allExistingTags, projectImplicitTags);
         }
 
-        public static void AddLineTagsToFilesInYarnProject(YarnProjectImporter importer)
+        public static void AddLineTagsToFilesInYarnProject(YarnProjectImporter importer, HashSet<string>? excludedTags = null, ILineTagGenerator? tagger = null)
         {
+#if USE_UNITY_LOCALIZATION
             var (AllExistingTags, ProjectImplicitTags) = YarnProjectUtility.ExtantLineTags(importer);
 
-#if USE_UNITY_LOCALIZATION
             // if we are using Unity localisation we need to first remove the
             // implicit tags for this project from the strings table
             if (importer.UseUnityLocalisationSystem && importer.UnityLocalisationStringTableCollection != null)
@@ -489,14 +499,33 @@ namespace Yarn.Unity.Editor
 
                     // Produce a version of this file that contains line tags
                     // added where they're needed.
-                    var tagged = Yarn.Compiler.Utility.TagLines(contents, AllExistingTags ?? new List<string>());
-                    var taggedVersion = tagged.Item1;
+
+                    var tagged = Yarn.Compiler.Utility.TagLines(contents, excludedTags, tagger);
+
+                    var taggedVersion = tagged.ModifiedSource;
 
                     // if the file has an error it returns null we want to bail
                     // out then otherwise we'd wipe the yarn file
                     if (taggedVersion == null)
                     {
                         continue;
+                    }
+
+                    if (tagged.TagExceptions.Count > 0)
+                    {
+                        System.Text.StringBuilder stringBuilder = new();
+                        foreach (var ex in tagged.TagExceptions)
+                        {
+                            if (!string.IsNullOrWhiteSpace(ex.SourceFile) && ex.LineNumber != -1)
+                            {
+                                stringBuilder.AppendLine($"Unable to tag line {ex.LineNumber} in {ex.SourceFile}: {ex.Message}");
+                            }
+                            else
+                            {
+                                stringBuilder.AppendLine($"\t- {ex.Message}");
+                            }
+                        }
+                        Debug.LogError($"Encountered the following issues while attempting to tag lines:\n{stringBuilder.ToString()}");
                     }
 
                     // If this produced a modified version of the file, write it
@@ -507,8 +536,6 @@ namespace Yarn.Unity.Editor
 
                         File.WriteAllText(assetPath, taggedVersion, System.Text.Encoding.UTF8);
                         AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.Default);
-
-                        AllExistingTags = tagged.Item2 as List<string>;
                     }
                 }
             }
@@ -531,7 +558,6 @@ namespace Yarn.Unity.Editor
             {
                 Debug.Log("No files needed updating.");
             }
-
         }
 
         /// <summary>
@@ -654,9 +680,22 @@ namespace Yarn.Unity.Editor
         }
 
         [OnOpenAsset(OnOpenAssetAttributeMode.Execute)]
-        public static bool OnOpenAsset(int instanceID)
+        public static bool OnOpenAsset(EntityId instanceID)
         {
+
+// temporarily disabling the obsolete warning for the GetAssetPath call
+// but only for Unity <6.4, otherwise we want the warning
+// because this code needs to exist across multiple unity versions
+// and it's only an actual concern on 6.4+ we can disable it when earlier
+#if !UNITY_6000_4_OR_NEWER
+            #pragma warning disable 0618
+#endif
             var path = AssetDatabase.GetAssetPath(instanceID);
+
+#if !UNITY_6000_4_OR_NEWER
+            #pragma warning restore 0618
+#endif
+
             var project = AssetDatabase.LoadAssetAtPath<YarnProject>(path);
 
             if (project == null)
@@ -682,9 +721,20 @@ namespace Yarn.Unity.Editor
         }
 
         [OnOpenAsset(OnOpenAssetAttributeMode.Validate)]
-        public static bool OnValidateAsset(int instanceID)
+        public static bool OnValidateAsset(EntityId instanceID)
         {
+// temporarily disabling the obsolete warning for the GetAssetPath call
+// but only for Unity <6.4, otherwise we want the warning
+// because this code needs to exist across multiple unity versions
+// and it's only an actual concern on 6.4+ we can disable it when earlier
+#if !UNITY_6000_4_OR_NEWER
+            #pragma warning disable 0618
+#endif
             var path = AssetDatabase.GetAssetPath(instanceID);
+
+#if !UNITY_6000_4_OR_NEWER
+            #pragma warning restore 0618
+#endif
             var project = AssetDatabase.LoadAssetAtPath<YarnProject>(path);
 
             if (project == null)

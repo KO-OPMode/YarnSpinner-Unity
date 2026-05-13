@@ -303,8 +303,11 @@ namespace Yarn.Unity
                     {
                         // we get the substring of 0 -> markup position
                         // and replace that range with ...
-                        var end = lineText.Substring(markup.Position);
-                        lineText = "..." + end;
+                        if (markup.Position <= lineText.Length) // Bounds check
+                        {
+                            var end = lineText.Substring(markup.Position);
+                            lineText = "..." + end;
+                        }
                     }
 
                     if (lastLineText != null)

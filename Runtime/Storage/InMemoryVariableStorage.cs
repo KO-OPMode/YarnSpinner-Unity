@@ -71,10 +71,11 @@ namespace Yarn.Unity
             var stringBuilder = new System.Text.StringBuilder();
             foreach (KeyValuePair<string, object> item in variables)
             {
+                // .Name gets type name without namespace prefix
                 stringBuilder.AppendLine(string.Format("{0} = {1} ({2})",
                                                         item.Key,
                                                         item.Value.ToString(),
-                                                        variableTypes[item.Key].ToString().Substring("System.".Length)));
+                                                        variableTypes[item.Key].Name));
             }
             return stringBuilder.ToString();
         }
